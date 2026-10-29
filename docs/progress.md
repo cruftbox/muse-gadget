@@ -46,6 +46,8 @@ The asynchronous Wit changes pass 40 affected host tests with WinLibs GCC
 `0x221000` bytes and leaves `0x1df000` bytes, 47 percent, free in the smallest
 OTA application partition.
 
-The device was last observed completing an end-to-end Muse request with text
-and audio. The asynchronous Wit build has not yet been flashed, so its behavior
-is build-verified but not device-verified.
+The asynchronous Wit build was flashed to Board 1 on October 29, 2026. Its boot
+log confirmed retained Wi-Fi and pairing credentials, successful display and
+audio initialization, connection to the Muse VM, and OTA image validation. The
+new streaming path is boot-verified but still requires an end-to-end voice
+request before it can be called functionally device-verified.
