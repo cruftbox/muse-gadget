@@ -32,8 +32,10 @@ changes, ESP-IDF, command-line tools, or firmware compilation.
 ## Current status
 
 - Board 1 identified over native USB Serial/JTAG as an ESP32-S3 on COM3.
-- Factory firmware remains installed on the device.
 - Complete 16 MB factory flash backed up and verified with two independent reads.
+- The backup is `backups/factory-2026-10-29-80456b35af58.bin`, excluded from
+  Git, with SHA-256
+  `01146BC3F053CB9F2E498E62EE613AA7429073BAB2F5272D6F6949F0F1A4522A`.
 - Secure Boot and Flash Encryption are disabled.
 - Hardware documentation and current Muse SDK support have been reviewed.
 - Muse SDK revision `1db6a26f4ca56939c4465d8a12e241c1b1b5c8dc` is imported under
@@ -43,12 +45,24 @@ changes, ESP-IDF, command-line tools, or firmware compilation.
 - The Waveshare target compiles successfully with ESP-IDF 6.0.1. The signed
   application image is 2,166,784 bytes and leaves 48% of each 4 MiB OTA
   partition free.
-- Hardware validation and recipient setup remain in progress. The build is
-  intentionally missing a Muse SDK token until runtime provisioning is ready.
-- No Muse firmware has been written to the board.
+- Board 1 is running that build. The boot log reaches the setup screen without
+  a panic or reboot loop. Display, touch registration, battery reporting,
+  Bluetooth advertising, both microphones, the speaker codec, Wi-Fi scanning,
+  and the 8 MB PSRAM initialize successfully.
+- The screen is correctly oriented and shows `SET UP WI-FI` with Bluetooth
+  provisioning name `MuseGadget-35AF58`. USB status reports the same board,
+  95% battery, no saved Wi-Fi network, and `Ready to pair`.
+- The build contains no Muse SDK token. A synthetic token was successfully
+  provisioned over USB and loaded after restart. The on-device two-step reset
+  then restarted the board with no SDK token, no Wi-Fi credentials, no pairing,
+  and status `Ready to pair`. This also verified touch navigation.
+- Board 2 remains untouched.
 
 The verified backup is intentionally excluded from Git because it may contain
 device-specific data.
+
+The host-side config-store test is present, but it was skipped on this Windows
+host because no host C compiler is installed. The ESP-IDF target build passed.
 
 ## Important requirements
 
