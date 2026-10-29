@@ -294,9 +294,9 @@ menu "Muse"
         default n
         help
             POST each completed text reply to Wit.ai and play its MP3 response
-            through the existing Muse decoder and speaker path. The build reads
-            the Wit client token from WIT_CLIENT_TOKEN or the repository-root
-            .wit-token file. That local file must not be committed.
+            through the existing Muse decoder and speaker path. The owner stores
+            a Wit.ai client token from a temporary local setup page after Wi-Fi
+            setup. Factory reset removes it.
 
     config MUSE_REALTIME_VOICE
         bool "Live voice calls with Muse (experimental)"

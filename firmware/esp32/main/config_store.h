@@ -22,7 +22,7 @@
 // Persistent key/value config stored in NVS.
 // Setup keys: ssid, password, wifi_channel, wifi_others, wifi_hidden (see
 // wifi_known.h), access_token, refresh_token, vm_url, username, api_url,
-// api_url_v2, noise_host, setup_complete. Device-level keys are
+// api_url_v2, noise_host, setup_complete, wit_token. Device-level keys are
 // preserved by config_clear_pairing() and config_clear_setup().
 // auth_token is a legacy alias from early Link firmware and is only kept
 // long enough to migrate by minting a device token pair.

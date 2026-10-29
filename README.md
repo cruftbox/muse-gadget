@@ -112,17 +112,26 @@ activated:
 tools/muse/board.sh build lcd154
 ```
 
-The `lcd154` profile speaks completed text replies through Wit.ai. The current
-build reads the client token from the ignored repository-root `.wit-token` file
-or `WIT_CLIENT_TOKEN` and embeds it in the firmware. This is the implemented
-behavior, not the intended handoff flow. The planned runtime setup page is
-specified in [`docs/wit-token-provisioning.md`](docs/wit-token-provisioning.md).
-It will let each owner store their own token from a phone after Wi-Fi setup,
-without rebuilding or flashing the firmware.
+The `lcd154` profile speaks completed text replies through Wit.ai. Each owner
+stores their own Wit.ai client token after completing Muse and Wi-Fi setup:
+
+1. Open the Wit.ai app settings on a phone and copy its client access token.
+2. On the gadget, open **Settings > Sound > Wit.ai token** and tap
+   **Configure**.
+3. Open the local URL shown by the gadget from a phone on the same Wi-Fi
+   network.
+4. Paste the token and tap **Save and test**.
+
+The gadget validates the token with Wit.ai before storing it. The temporary
+local setup page closes after success, cancellation, leaving the Sound page, or
+five minutes. The stored token is never displayed. It is removed by **Remove**
+on the Sound page and by the gadget's setup reset. No computer, firmware rebuild,
+or USB data connection is required. Implementation and security details are in
+[`docs/wit-token-provisioning.md`](docs/wit-token-provisioning.md).
 
 Wit.ai currently accepts up to 280 bytes of reply text per request. Longer
 replies are spoken only through that boundary but remain fully visible on
-screen. The local Wit test MP3 is excluded from Git.
+screen.
 
 The board implementation is
 `firmware/esp32/components/muse/boards/board_waveshare_s3_lcd154.c`. It uses

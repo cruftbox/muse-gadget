@@ -107,6 +107,11 @@ static lv_obj_t *s_ble_sw, *s_ble_status;
 static lv_obj_t *s_notes_sw;
 #endif
 static lv_obj_t *s_spk_sw, *s_vol_val, *s_vol_sl, *s_gain_val, *s_gain_sl, *s_bright_val, *s_bright_sl, *s_mic_bar, *s_mic_val;
+#if CONFIG_MUSE_WIT_TTS
+static lv_obj_t *s_wit_status, *s_wit_setup_lbl, *s_wit_remove_lbl;
+static int64_t s_wit_remove_armed_us;
+static char s_wit_url[48];
+#endif
 
 /* Sleep page. */
 static const int SLEEP_CHOICES[] = { 0, 30, 60, 120, 300, 600 };
@@ -458,6 +463,9 @@ static void show(lv_obj_t *p)
     }
     if (prev == s_sound) {
         muse_voice_set_monitor(false);
+#if CONFIG_MUSE_WIT_TTS
+        muse_link_wit_setup_stop();
+#endif
     }
     lv_obj_remove_flag(p, LV_OBJ_FLAG_HIDDEN);
     s_current = p;
@@ -1163,6 +1171,68 @@ static void on_bright(lv_event_t *e)
     }
 }
 
+#if CONFIG_MUSE_WIT_TTS
+static void on_wit_setup(lv_event_t *e)
+{
+    (void)e;
+    s_wit_remove_armed_us = 0;
+    set_text(s_wit_remove_lbl, "Remove Wit.ai token");
+    if (!muse_link_wit_setup_start(s_wit_url, sizeof(s_wit_url))) {
+        s_wit_url[0] = '\0';
+    }
+}
+
+static void on_wit_remove(lv_event_t *e)
+{
+    (void)e;
+    int64_t now = esp_timer_get_time();
+    if (s_wit_remove_armed_us && now - s_wit_remove_armed_us < 5000000) {
+        set_text(s_wit_remove_lbl, muse_link_wit_token_clear() ? "Token removed" : "Remove failed");
+        s_wit_remove_armed_us = 0;
+        s_wit_url[0] = '\0';
+        return;
+    }
+    s_wit_remove_armed_us = now;
+    set_text(s_wit_remove_lbl, "Tap again to remove");
+}
+
+static void tick_wit(void)
+{
+    muse_wit_setup_state_t state = muse_link_wit_setup_state();
+    char status[112];
+    switch (state) {
+    case MUSE_WIT_READY:
+        strlcpy(status, "Ready", sizeof(status));
+        break;
+    case MUSE_WIT_SERVING:
+        snprintf(status, sizeof(status), "Open on this Wi-Fi:\n%s", s_wit_url);
+        break;
+    case MUSE_WIT_TESTING:
+        strlcpy(status, "Testing token...", sizeof(status));
+        break;
+    case MUSE_WIT_INVALID:
+        snprintf(status, sizeof(status), "Invalid token\nTry again at %s", s_wit_url);
+        break;
+    case MUSE_WIT_UNAVAILABLE:
+        snprintf(status, sizeof(status), "Wit.ai unavailable\nRetry at %s", s_wit_url);
+        break;
+    case MUSE_WIT_SETUP_ERROR:
+        strlcpy(status, "Setup page unavailable\nConnect Wi-Fi and retry", sizeof(status));
+        break;
+    case MUSE_WIT_UNCONFIGURED:
+    default:
+        strlcpy(status, "Not configured", sizeof(status));
+        break;
+    }
+    set_text(s_wit_status, status);
+    set_text(s_wit_setup_lbl, state == MUSE_WIT_READY ? "Replace Wit.ai token" : "Configure Wit.ai token");
+    if (s_wit_remove_armed_us && esp_timer_get_time() - s_wit_remove_armed_us >= 5000000) {
+        s_wit_remove_armed_us = 0;
+        set_text(s_wit_remove_lbl, "Remove Wit.ai token");
+    }
+}
+#endif
+
 static void build_sound_page(lv_obj_t *tile)
 {
     lv_obj_t *list;
@@ -1176,6 +1246,14 @@ static void build_sound_page(lv_obj_t *tile)
         s_spk_sw = switch_row(list, "Speaker", muse_settings_speaker_on(), on_speaker_sw);
         s_vol_sl = slider(list, "Volume", 0, 100, muse_settings_volume(), &s_vol_val, on_volume);
     }
+#if CONFIG_MUSE_WIT_TTS
+    s_wit_remove_armed_us = 0;
+    s_wit_url[0] = '\0';
+    s_wit_status = note(list, "");
+    button(list, "Configure Wit.ai token", COLOR_ACCENT, on_wit_setup, &s_wit_setup_lbl);
+    button(list, "Remove Wit.ai token", COLOR_DANGER, on_wit_remove, &s_wit_remove_lbl);
+    note(list, "Create a Wit.ai app, copy its client access token, then open the local address shown here on a phone connected to the same Wi-Fi.");
+#endif
     s_gain_sl = slider(list, "Mic gain", 0, MUSE_MIC_GAIN_MAX / 3, muse_settings_mic_gain() / 3, &s_gain_val, on_gain);
 
     lv_obj_t *meter = lv_obj_create(list);
@@ -1209,6 +1287,9 @@ static void build_sound_page(lv_obj_t *tile)
 
 static void tick_sound(void)
 {
+#if CONFIG_MUSE_WIT_TTS
+    tick_wit();
+#endif
 #if CONFIG_MUSE_BOARD_M5STACK_STOPWATCH && CONFIG_MUSE_REALTIME_VOICE
     lv_obj_set_state(s_notes_sw, LV_STATE_CHECKED, muse_settings_voice_notes());
 #endif

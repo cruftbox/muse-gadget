@@ -62,6 +62,7 @@
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "esp_tls.h"
+#include "mbedtls/platform_util.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
 #include "freertos/queue.h"
@@ -90,10 +91,6 @@ extern "C" {
 using namespace musegadgets::noise::core;
 
 static const char *TAG = "muse_chat_session";
-
-#if CONFIG_MUSE_WIT_TTS
-extern const uint8_t wit_token_start[] asm("_binary_wit_token_txt_start");
-#endif
 
 #define NOISE_PATH "/v1/noise"
 #define NOISE_PORT 443
@@ -1597,6 +1594,11 @@ static bool fetch_wit_tts(int i)
     if (!text || !text[0]) {
         return false;
     }
+    char token[MUSE_WIT_TOKEN_MAX + 1] = {};
+    if (!muse_link_wit_token_get(token, sizeof(token))) {
+        ESP_LOGW(TAG, "Wit.ai TTS token is not configured");
+        return false;
+    }
     size_t text_len = wit_text_length(text);
     char spoken[281];
     memcpy(spoken, text, text_len);
@@ -1607,6 +1609,7 @@ static bool fetch_wit_tts(int i)
 
     cJSON *body = cJSON_CreateObject();
     if (!body) {
+        mbedtls_platform_zeroize(token, sizeof(token));
         return false;
     }
     cJSON_AddStringToObject(body, "q", spoken);
@@ -1616,6 +1619,7 @@ static bool fetch_wit_tts(int i)
     char *json = cJSON_PrintUnformatted(body);
     cJSON_Delete(body);
     if (!json) {
+        mbedtls_platform_zeroize(token, sizeof(token));
         return false;
     }
 
@@ -1629,11 +1633,12 @@ static bool fetch_wit_tts(int i)
     esp_http_client_handle_t http = esp_http_client_init(&cfg);
     if (!http) {
         free(json);
+        mbedtls_platform_zeroize(token, sizeof(token));
         return false;
     }
 
-    char auth[512];
-    snprintf(auth, sizeof(auth), "Bearer %s", reinterpret_cast<const char *>(wit_token_start));
+    char auth[MUSE_WIT_TOKEN_MAX + 8];
+    snprintf(auth, sizeof(auth), "Bearer %s", token);
     esp_http_client_set_header(http, "Authorization", auth);
     esp_http_client_set_header(http, "Accept", "audio/mpeg");
     esp_http_client_set_header(http, "Content-Type", "application/json");
@@ -1669,6 +1674,8 @@ static bool fetch_wit_tts(int i)
     esp_http_client_close(http);
     esp_http_client_cleanup(http);
     free(json);
+    mbedtls_platform_zeroize(auth, sizeof(auth));
+    mbedtls_platform_zeroize(token, sizeof(token));
     return ok;
 }
 #endif

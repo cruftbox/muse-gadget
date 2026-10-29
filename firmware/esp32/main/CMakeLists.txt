@@ -54,6 +54,7 @@ set(GADGET_REQUIRES
     esp_event
     esp_netif
     esp_http_client
+    esp_http_server
     esp_https_ota
     app_update
     esp_app_format
@@ -97,6 +98,10 @@ endif()
 
 if(CONFIG_MUSE_ENABLED)
     list(APPEND GADGET_SRCS "muse_glue.c")
+endif()
+
+if(CONFIG_MUSE_WIT_TTS)
+    list(APPEND GADGET_SRCS "wit_token_setup.c")
 endif()
 
 if(CONFIG_HOMEHUB_LED_BACKEND_DEVKIT_GPIO27 OR CONFIG_HOMEHUB_LED_BACKEND_VOICE_RING OR CONFIG_HOMEHUB_LED_BACKEND_RESPEAKER_LITE)

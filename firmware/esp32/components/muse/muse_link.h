@@ -42,6 +42,18 @@ typedef enum {
     MUSE_LINK_ERROR,
 } muse_link_state_t;
 
+#define MUSE_WIT_TOKEN_MAX 384
+
+typedef enum {
+    MUSE_WIT_UNCONFIGURED,
+    MUSE_WIT_READY,
+    MUSE_WIT_SERVING,
+    MUSE_WIT_TESTING,
+    MUSE_WIT_INVALID,
+    MUSE_WIT_UNAVAILABLE,
+    MUSE_WIT_SETUP_ERROR,
+} muse_wit_setup_state_t;
+
 /* A reply frame of a request on Link's session: see noise_ctrl_req_cb in main/noise_control.h.
  * MUSE_LINK_REQ_TOO_LARGE in place of -1: a reply frame too big for this board's
  * buffers ended the session (NOISE_CTRL_REQ_TOO_LARGE). */
@@ -62,6 +74,11 @@ typedef struct {
     const char *(*sdk_token)(void);               /* the maker's SDK token, or NULL */
     bool (*sdk_token_set)(const char *token);     /* stores it and restarts; false if invalid */
     bool (*sdk_token_changed)(void);              /* paired with another token: pair again to use this one */
+    bool (*wit_token_get)(char *out, size_t cap); /* complete token for TTS only; never log it */
+    bool (*wit_token_clear)(void);
+    bool (*wit_setup_start)(char *url, size_t cap);
+    void (*wit_setup_stop)(void);
+    muse_wit_setup_state_t (*wit_setup_state)(void);
     /* Fills the VM whose id is want_vm (empty: Link's preferred VM). *vm_token is heap. */
     bool (*hatch_vm)(const char *want_vm, char *vm_id, size_t id_cap, char *vm_name, size_t name_cap,
                      char **vm_token);
@@ -97,6 +114,11 @@ bool muse_link_hatch_linked(void);
 const char *muse_link_sdk_token(void);
 bool muse_link_sdk_token_set(const char *token);
 bool muse_link_sdk_token_changed(void);
+bool muse_link_wit_token_get(char *out, size_t cap);
+bool muse_link_wit_token_clear(void);
+bool muse_link_wit_setup_start(char *url, size_t cap);
+void muse_link_wit_setup_stop(void);
+muse_wit_setup_state_t muse_link_wit_setup_state(void);
 bool muse_link_hatch_vm(const char *want_vm, char *vm_id, size_t id_cap, char *vm_name, size_t name_cap,
                         char **vm_token);
 bool muse_link_talk_press(void);

@@ -34,6 +34,9 @@
 #include "identity.h"
 #include "noise_control.h"
 #include "sdk_token_console.h"
+#if CONFIG_MUSE_WIT_TTS
+#include "wit_token_setup.h"
+#endif
 #include "stack_monitor.h"
 #include "wifi_known.h"
 #include "wifi_mgr.h"
@@ -389,6 +392,28 @@ static bool op_sdk_token_changed(void) {
     return identity_sdk_token_changed_since_pairing(NULL, 0);
 }
 
+#if CONFIG_MUSE_WIT_TTS
+static bool op_wit_token_get(char *out, size_t cap) {
+    return wit_token_setup_get(out, cap);
+}
+
+static bool op_wit_token_clear(void) {
+    return wit_token_setup_clear();
+}
+
+static bool op_wit_setup_start(char *url, size_t cap) {
+    return wit_token_setup_start(url, cap);
+}
+
+static void op_wit_setup_stop(void) {
+    wit_token_setup_stop();
+}
+
+static muse_wit_setup_state_t op_wit_setup_state(void) {
+    return wit_token_setup_state();
+}
+#endif
+
 static bool op_talk_press(void) {
     return app_confirm_pairing_press();
 }
@@ -412,6 +437,13 @@ static const muse_link_ops_t s_ops = {
     .sdk_token = identity_sdk_token,
     .sdk_token_set = op_sdk_token_set,
     .sdk_token_changed = op_sdk_token_changed,
+#if CONFIG_MUSE_WIT_TTS
+    .wit_token_get = op_wit_token_get,
+    .wit_token_clear = op_wit_token_clear,
+    .wit_setup_start = op_wit_setup_start,
+    .wit_setup_stop = op_wit_setup_stop,
+    .wit_setup_state = op_wit_setup_state,
+#endif
     .hatch_vm = op_hatch_vm,
     .talk_press = op_talk_press,
     .reset_setup = op_reset_setup,
@@ -666,6 +698,9 @@ void muse_glue_start(void) {
 }
 
 void muse_glue_storage_ready(void) {
+#if CONFIG_MUSE_WIT_TTS
+    wit_token_setup_init();
+#endif
     muse_ble_set_name(identity_ble_name());
     xEventGroupSetBits(s_ready, BIT_STORAGE);
 }

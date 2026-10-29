@@ -83,6 +83,35 @@ bool muse_link_sdk_token_changed(void)
     return s_ops && s_ops->sdk_token_changed && s_ops->sdk_token_changed();
 }
 
+bool muse_link_wit_token_get(char *out, size_t cap)
+{
+    if (!out || !cap) return false;
+    out[0] = '\0';
+    return s_ops && s_ops->wit_token_get && s_ops->wit_token_get(out, cap);
+}
+
+bool muse_link_wit_token_clear(void)
+{
+    return s_ops && s_ops->wit_token_clear && s_ops->wit_token_clear();
+}
+
+bool muse_link_wit_setup_start(char *url, size_t cap)
+{
+    if (!url || !cap) return false;
+    url[0] = '\0';
+    return s_ops && s_ops->wit_setup_start && s_ops->wit_setup_start(url, cap);
+}
+
+void muse_link_wit_setup_stop(void)
+{
+    if (s_ops && s_ops->wit_setup_stop) s_ops->wit_setup_stop();
+}
+
+muse_wit_setup_state_t muse_link_wit_setup_state(void)
+{
+    return s_ops && s_ops->wit_setup_state ? s_ops->wit_setup_state() : MUSE_WIT_UNCONFIGURED;
+}
+
 bool muse_link_hatch_vm(const char *want_vm, char *vm_id, size_t id_cap, char *vm_name, size_t name_cap,
                         char **vm_token)
 {

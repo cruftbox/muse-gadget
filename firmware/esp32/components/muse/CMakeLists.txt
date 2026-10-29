@@ -173,25 +173,6 @@ idf_component_register(
     PRIV_REQUIRES ${muse_priv_requires}
 )
 
-if(CONFIG_MUSE_WIT_TTS)
-    set(wit_token_file "${CMAKE_SOURCE_DIR}/../../.wit-token")
-    if(DEFINED ENV{WIT_CLIENT_TOKEN} AND NOT "$ENV{WIT_CLIENT_TOKEN}" STREQUAL "")
-        set(wit_token "$ENV{WIT_CLIENT_TOKEN}")
-    elseif(EXISTS "${wit_token_file}")
-        file(READ "${wit_token_file}" wit_token)
-        string(STRIP "${wit_token}" wit_token)
-        if(wit_token MATCHES "^wit_client_token[ \t]*=[ \t]*\"([^\"]+)\"$")
-            set(wit_token "${CMAKE_MATCH_1}")
-        endif()
-    endif()
-    if(NOT DEFINED wit_token OR "${wit_token}" STREQUAL "")
-        message(FATAL_ERROR "MUSE_WIT_TTS needs WIT_CLIENT_TOKEN or ${wit_token_file}")
-    endif()
-    set(wit_token_embed "${CMAKE_CURRENT_BINARY_DIR}/wit_token.txt")
-    file(WRITE "${wit_token_embed}" "${wit_token}")
-    target_add_binary_data(${COMPONENT_LIB} "${wit_token_embed}" TEXT)
-endif()
-
 if(CONFIG_MUSE_UI_FREEINK)
     # FreeInk's board profile, for the panel and its pins. PUBLIC: FreeInk's
     # headers read it too, in every file that includes them.

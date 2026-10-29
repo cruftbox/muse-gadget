@@ -163,6 +163,7 @@ bool config_clear_pairing(void) {
         "username",
         "pair_sdk_hint",
         "sdk_token",
+        "wit_token",
     };
     return clear_and_verify(keys, sizeof(keys) / sizeof(keys[0]));
 }
@@ -179,6 +180,7 @@ bool config_clear_setup(void) {
         "username",
         "pair_sdk_hint",
         "sdk_token",
+        "wit_token",
         "ssid",
         "password",
         "wifi_channel",

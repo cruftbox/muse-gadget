@@ -2,8 +2,8 @@
 
 ## Status
 
-This document specifies a planned feature. It is not implemented in the current
-firmware. The current `lcd154` build embeds a Wit.ai client token at build time.
+Implemented for the `lcd154` firmware. The build no longer accepts or embeds a
+Wit.ai client token. The owner provisions the token at runtime from a phone.
 
 ## Goal
 
@@ -16,16 +16,16 @@ only changes how that token reaches the gadget.
 
 ## Existing mechanisms
 
-The existing implementation has four relevant pieces:
+The implementation has four relevant pieces:
 
-- `components/muse/CMakeLists.txt` reads `WIT_CLIENT_TOKEN` or `.wit-token`,
-  generates `wit_token.txt`, and embeds it in the application image.
-- `muse_chat_session.cpp` reads the embedded token when it sends a Wit.ai
-  synthesis request.
+- `main/wit_token_setup.c` owns the temporary HTTP server, token validation,
+  and storage in the `homehub` NVS namespace.
+- `muse_chat_session.cpp` obtains a bounded runtime copy when it sends a Wit.ai
+  synthesis request, then clears its token and Authorization buffers.
 - `main/config_store.c` persists account credentials in the `homehub` NVS
   namespace and verifies that factory-reset erasures succeeded.
-- The Muse settings UI already reports Wi-Fi state and provides account and
-  audio settings. There is no HTTP configuration server in the firmware.
+- The Sound settings page starts and stops the local setup server and reports
+  its state without exposing the token.
 
 The runtime token belongs in `config_store`, not `muse_settings`. It is an
 account credential that factory reset must erase, while the `muse` namespace is
@@ -60,11 +60,11 @@ phones, and a second Wi-Fi setup path.
 
 ## Storage and component boundary
 
-Add a bounded `wit_token` value to the `homehub` NVS namespace. The main
-component owns reading, writing, and erasing the credential through
-`config_store`.
+The bounded `wit_token` value is stored in the `homehub` NVS namespace. The
+main component owns reading, writing, and erasing the credential through
+`config_store` and `wit_token_setup`.
 
-Extend `muse_link_ops_t` with operations that let the Muse component query
+`muse_link_ops_t` has operations that let the Muse component query
 whether a Wit token is configured and submit or clear one. This follows the
 existing SDK-token boundary: `components/muse` owns the UI and TTS behavior,
 while `main` owns account credentials and reset behavior. The interface must
@@ -75,8 +75,8 @@ building the Authorization header. It must clear temporary buffers after the
 request. If no token is configured, the reply remains visible as text and the
 UI reports **Wit.ai not configured**.
 
-Remove the CMake requirement for `WIT_CLIENT_TOKEN` and `.wit-token` from the
-`lcd154` build. A build with `CONFIG_MUSE_WIT_TTS` must succeed without a token.
+There is no CMake requirement for `WIT_CLIENT_TOKEN` or `.wit-token`. A build
+with `CONFIG_MUSE_WIT_TTS` succeeds without a token.
 
 ## HTTP interface
 
