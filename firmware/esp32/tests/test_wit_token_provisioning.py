@@ -56,11 +56,16 @@ class WitTokenProvisioningContractTest(unittest.TestCase):
 
     def test_token_is_validated_before_it_is_stored(self) -> None:
         handler = _function_body(self.setup, "static esp_err_t token_handler(")
-        check = handler.index("check_token(token)")
-        store = handler.index("config_set_str(WIT_TOKEN_KEY, token)")
-        self.assertLess(check, store)
-        self.assertIn("The previous token was kept", handler)
+        self.assertNotIn("check_token(", handler)
+        self.assertNotIn("config_set_str", handler)
+        validation = _function_body(self.setup, "static void validation_task(")
+        commit = _function_body(self.setup, "bool wit_token_setup_commit_pending(")
+        self.assertIn("check_token(job->token)", validation)
+        self.assertIn("config_set_str(WIT_TOKEN_KEY, token)", commit)
+        self.assertIn("202 Accepted", handler)
         self.assertIn("mbedtls_platform_zeroize(token", handler)
+        stop = _function_body(self.setup, "void wit_token_setup_stop(")
+        self.assertIn("discard_pending_validation()", stop)
 
     def test_setup_server_is_bounded_and_local_action_controlled(self) -> None:
         self.assertIn('static const httpd_uri_t ROOT_URI', self.setup)
@@ -71,6 +76,11 @@ class WitTokenProvisioningContractTest(unittest.TestCase):
         self.assertIn("req->content_len >= BODY_MAX", self.setup)
         self.assertIn("muse_link_wit_setup_start", self.ui)
         self.assertIn("muse_link_wit_setup_stop", self.ui)
+
+    def test_setup_server_uses_psram_and_logs_failures(self) -> None:
+        start = _function_body(self.setup, "bool wit_token_setup_start(")
+        self.assertIn("cfg.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT", start)
+        self.assertIn("setup page server start failed", start)
 
     def test_stored_token_is_not_rendered(self) -> None:
         page_start = self.setup.index("static const char SETUP_PAGE[]")

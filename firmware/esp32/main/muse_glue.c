@@ -63,6 +63,7 @@ static const char *TAG = "link.muse";
 #define KEEP_SAVE       BIT2    // remember s_ssid/s_pass first
 #define KEEP_RELOAD     BIT3    // Link may have changed the saved networks
 #define KEEP_FORGET     BIT4    // forget the networks marked in s_saved
+#define KEEP_WIT        BIT5    // store a validated Wit token on this internal stack
 
 #define CONNECT_TIMEOUT_MS 20000
 #define RETRY_MIN_US (5LL * 1000 * 1000)
@@ -114,6 +115,10 @@ static int64_t s_saw_saved_us;  // when one of Muse's scans last showed a saved 
 
 static void keeper_kick(uint32_t bits) {
     if (s_keeper) xTaskNotify(s_keeper, bits, eSetBits);
+}
+
+static void schedule_wit_commit(void) {
+    keeper_kick(KEEP_WIT);
 }
 
 // Refreshes the copies from NVS, unless Muse's changes aren't written yet.
@@ -564,6 +569,11 @@ static void keeper_task(void *arg) {
             }
             setup_done = done;
         }
+#if CONFIG_MUSE_WIT_TTS
+        if (pending & KEEP_WIT) {
+            wit_token_setup_commit_pending();
+        }
+#endif
         if (pending & KEEP_BLE) {
             app_ble_companion_set(muse_settings_ble_on());
         }
@@ -699,7 +709,7 @@ void muse_glue_start(void) {
 
 void muse_glue_storage_ready(void) {
 #if CONFIG_MUSE_WIT_TTS
-    wit_token_setup_init();
+    wit_token_setup_init(schedule_wit_commit);
 #endif
     muse_ble_set_name(identity_ble_name());
     xEventGroupSetBits(s_ready, BIT_STORAGE);

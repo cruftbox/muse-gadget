@@ -21,7 +21,8 @@
 
 #include "muse_link.h"
 
-void wit_token_setup_init(void);
+void wit_token_setup_init(void (*schedule_commit)(void));
+bool wit_token_setup_commit_pending(void);
 bool wit_token_setup_get(char *out, size_t cap);
 bool wit_token_setup_clear(void);
 bool wit_token_setup_start(char *url, size_t cap);

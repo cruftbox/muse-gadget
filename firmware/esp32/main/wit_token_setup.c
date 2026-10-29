@@ -23,11 +23,15 @@
 
 #include "cJSON.h"
 #include "esp_crt_bundle.h"
+#include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
+#include "freertos/task.h"
 #include "mbedtls/platform_util.h"
 #include "sdkconfig.h"
 
@@ -46,6 +50,17 @@ static atomic_bool s_stop_pending;
 static int64_t s_deadline_us;
 static char s_url[48];
 static bool s_wifi_held;
+static portMUX_TYPE s_token_lock = portMUX_INITIALIZER_UNLOCKED;
+static char s_commit_token[MUSE_WIT_TOKEN_MAX + 1];
+static void (*s_schedule_commit)(void);
+static atomic_uint s_generation;
+
+typedef struct {
+    uint32_t generation;
+    char token[MUSE_WIT_TOKEN_MAX + 1];
+} wit_validation_t;
+
+static wit_validation_t *s_pending_validation;
 
 static const char SETUP_PAGE[] =
     "<!doctype html><html><head><meta charset=utf-8>"
@@ -220,11 +235,63 @@ static wit_check_t check_token(const char *token)
             result = WIT_CHECK_INVALID;
         }
     }
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "token validation connection failed: %s", esp_err_to_name(err));
+    }
     esp_http_client_close(http);
     esp_http_client_cleanup(http);
     cJSON_free(json);
     mbedtls_platform_zeroize(auth, sizeof(auth));
     return result;
+}
+
+static void validation_task(void *arg)
+{
+    wit_validation_t *job = (wit_validation_t *)arg;
+    wit_check_t checked = check_token(job->token);
+    if (job->generation == atomic_load(&s_generation)) {
+        if (checked == WIT_CHECK_OK) {
+            portENTER_CRITICAL(&s_token_lock);
+            strlcpy(s_commit_token, job->token, sizeof(s_commit_token));
+            portEXIT_CRITICAL(&s_token_lock);
+            if (s_schedule_commit) s_schedule_commit();
+        } else {
+            atomic_store(&s_state, checked == WIT_CHECK_INVALID ? MUSE_WIT_INVALID : MUSE_WIT_UNAVAILABLE);
+        }
+    }
+    mbedtls_platform_zeroize(job, sizeof(*job));
+    free(job);
+    vTaskDeleteWithCaps(NULL);
+}
+
+static bool start_validation(void)
+{
+    wit_validation_t *job;
+    portENTER_CRITICAL(&s_token_lock);
+    job = s_pending_validation;
+    s_pending_validation = NULL;
+    portEXIT_CRITICAL(&s_token_lock);
+    if (!job) return false;
+    if (xTaskCreatePinnedToCoreWithCaps(validation_task, "wit_check", 12 * 1024, job, 4, NULL, 0,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) == pdPASS) {
+        return true;
+    }
+    mbedtls_platform_zeroize(job, sizeof(*job));
+    free(job);
+    return false;
+}
+
+static void discard_pending_validation(void)
+{
+    wit_validation_t *job;
+    portENTER_CRITICAL(&s_token_lock);
+    job = s_pending_validation;
+    s_pending_validation = NULL;
+    portEXIT_CRITICAL(&s_token_lock);
+    if (job) {
+        mbedtls_platform_zeroize(job, sizeof(*job));
+        free(job);
+    }
 }
 
 static esp_err_t token_handler(httpd_req_t *req)
@@ -242,22 +309,21 @@ static esp_err_t token_handler(httpd_req_t *req)
         return sent;
     }
 
-    wit_check_t checked = check_token(token);
-    esp_err_t sent;
-    if (checked == WIT_CHECK_INVALID) {
-        atomic_store(&s_state, MUSE_WIT_INVALID);
-        sent = send_html(req, "401 Unauthorized", "<p>Wit.ai rejected that token. Return and try again.</p>");
-    } else if (checked == WIT_CHECK_UNAVAILABLE) {
-        atomic_store(&s_state, MUSE_WIT_UNAVAILABLE);
-        sent = send_html(req, "502 Bad Gateway", "<p>Wit.ai could not be reached. The previous token was kept.</p>");
-    } else if (!config_set_str(WIT_TOKEN_KEY, token)) {
+    wit_validation_t *job = heap_caps_calloc(1, sizeof(*job), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!job) {
         atomic_store(&s_state, MUSE_WIT_SETUP_ERROR);
-        sent = send_html(req, "500 Internal Server Error", "<p>The token could not be stored.</p>");
-    } else {
-        atomic_store(&s_state, MUSE_WIT_READY);
-        atomic_store(&s_stop_pending, true);
-        sent = send_html(req, "200 OK", "<p>Wit.ai is ready. You may close this page.</p>");
+        mbedtls_platform_zeroize(token, sizeof(token));
+        return send_html(req, "503 Service Unavailable", "<p>The token could not be tested. Return and try again.</p>");
     }
+    job->generation = atomic_load(&s_generation);
+    strlcpy(job->token, token, sizeof(job->token));
+    portENTER_CRITICAL(&s_token_lock);
+    s_pending_validation = job;
+    portEXIT_CRITICAL(&s_token_lock);
+    atomic_store(&s_state, MUSE_WIT_TESTING);
+    esp_err_t sent = send_html(req, "202 Accepted",
+                               "<p>Token received. The gadget is testing it now; check its Sound settings.</p>");
+    atomic_store(&s_stop_pending, true);
     mbedtls_platform_zeroize(token, sizeof(token));
     return sent;
 }
@@ -278,10 +344,29 @@ static const httpd_uri_t CANCEL_URI = {
     .uri = "/cancel", .method = HTTP_POST, .handler = cancel_handler,
 };
 
-void wit_token_setup_init(void)
+static void sync_stored_state(void)
 {
     atomic_store(&s_state, config_key_lookup(WIT_TOKEN_KEY) == CONFIG_KEY_FOUND
                                ? MUSE_WIT_READY : MUSE_WIT_UNCONFIGURED);
+}
+
+void wit_token_setup_init(void (*schedule_commit)(void))
+{
+    s_schedule_commit = schedule_commit;
+    sync_stored_state();
+}
+
+bool wit_token_setup_commit_pending(void)
+{
+    char token[MUSE_WIT_TOKEN_MAX + 1];
+    portENTER_CRITICAL(&s_token_lock);
+    strlcpy(token, s_commit_token, sizeof(token));
+    mbedtls_platform_zeroize(s_commit_token, sizeof(s_commit_token));
+    portEXIT_CRITICAL(&s_token_lock);
+    bool ok = token_ok(token) && config_set_str(WIT_TOKEN_KEY, token);
+    mbedtls_platform_zeroize(token, sizeof(token));
+    atomic_store(&s_state, ok ? MUSE_WIT_READY : MUSE_WIT_SETUP_ERROR);
+    return ok;
 }
 
 bool wit_token_setup_get(char *out, size_t cap)
@@ -304,17 +389,19 @@ static void stop_server(bool preserve_state)
     }
     atomic_store(&s_stop_pending, false);
     s_url[0] = '\0';
-    if (!preserve_state) wit_token_setup_init();
+    if (!preserve_state) sync_stored_state();
 }
 
 void wit_token_setup_stop(void)
 {
+    atomic_fetch_add(&s_generation, 1);
     stop_server(false);
+    discard_pending_validation();
 }
 
 bool wit_token_setup_clear(void)
 {
-    stop_server(false);
+    wit_token_setup_stop();
     bool ok = config_erase_key(WIT_TOKEN_KEY)
               && config_key_lookup(WIT_TOKEN_KEY) == CONFIG_KEY_NOT_FOUND;
     atomic_store(&s_state, ok ? MUSE_WIT_UNCONFIGURED : MUSE_WIT_SETUP_ERROR);
@@ -334,21 +421,34 @@ bool wit_token_setup_start(char *url, size_t cap)
 
     esp_netif_ip_info_t ip = {};
     esp_netif_t *netif = wifi_mgr_get_netif();
-    if (!netif || esp_netif_get_ip_info(netif, &ip) != ESP_OK || !ip.ip.addr) {
+    esp_err_t err = netif ? esp_netif_get_ip_info(netif, &ip) : ESP_ERR_INVALID_STATE;
+    if (err != ESP_OK || !ip.ip.addr) {
+        ESP_LOGW(TAG, "setup page has no station IP: %s", esp_err_to_name(err));
         atomic_store(&s_state, MUSE_WIT_SETUP_ERROR);
         return false;
     }
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.stack_size = 6144;
+    /* The running UI, network session and audio path leave no internal block
+     * large enough for this task. ESP-IDF permits the server stack in PSRAM. */
+    cfg.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
     cfg.max_uri_handlers = 3;
     cfg.lru_purge_enable = true;
     cfg.recv_wait_timeout = 10;
     cfg.send_wait_timeout = 10;
-    if (httpd_start(&s_server, &cfg) != ESP_OK
-        || httpd_register_uri_handler(s_server, &ROOT_URI) != ESP_OK
-        || httpd_register_uri_handler(s_server, &TOKEN_URI) != ESP_OK
-        || httpd_register_uri_handler(s_server, &CANCEL_URI) != ESP_OK) {
+    err = httpd_start(&s_server, &cfg);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "setup page server start failed: %s", esp_err_to_name(err));
+        stop_server(true);
+        atomic_store(&s_state, MUSE_WIT_SETUP_ERROR);
+        return false;
+    }
+    err = httpd_register_uri_handler(s_server, &ROOT_URI);
+    if (err == ESP_OK) err = httpd_register_uri_handler(s_server, &TOKEN_URI);
+    if (err == ESP_OK) err = httpd_register_uri_handler(s_server, &CANCEL_URI);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "setup page route registration failed: %s", esp_err_to_name(err));
         stop_server(true);
         atomic_store(&s_state, MUSE_WIT_SETUP_ERROR);
         return false;
@@ -369,8 +469,12 @@ muse_wit_setup_state_t wit_token_setup_state(void)
 {
     int state = atomic_load(&s_state);
     if (s_server && (atomic_load(&s_stop_pending) || esp_timer_get_time() >= s_deadline_us)) {
-        bool preserve = state == MUSE_WIT_READY || state == MUSE_WIT_SETUP_ERROR;
+        bool validate = atomic_load(&s_stop_pending) && state == MUSE_WIT_TESTING;
+        bool preserve = validate || state == MUSE_WIT_READY || state == MUSE_WIT_SETUP_ERROR;
         stop_server(preserve);
+        if (validate && !start_validation()) {
+            atomic_store(&s_state, MUSE_WIT_SETUP_ERROR);
+        }
         state = atomic_load(&s_state);
     }
     return (muse_wit_setup_state_t)state;
