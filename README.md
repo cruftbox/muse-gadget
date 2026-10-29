@@ -112,13 +112,17 @@ activated:
 tools/muse/board.sh build lcd154
 ```
 
-The `lcd154` profile speaks completed text replies through Wit.ai. Put the Wit
-client token in the ignored repository-root `.wit-token` file as either the raw
-token or `wit_client_token="..."`, then build normally. The build embeds the
-token in the device firmware. The token and the local Wit test MP3 are excluded
-from Git. Wit.ai currently accepts up to 280 bytes of reply text per request;
-longer replies are spoken only through that boundary but remain fully visible
-on screen.
+The `lcd154` profile speaks completed text replies through Wit.ai. The current
+build reads the client token from the ignored repository-root `.wit-token` file
+or `WIT_CLIENT_TOKEN` and embeds it in the firmware. This is the implemented
+behavior, not the intended handoff flow. The planned runtime setup page is
+specified in [`docs/wit-token-provisioning.md`](docs/wit-token-provisioning.md).
+It will let each owner store their own token from a phone after Wi-Fi setup,
+without rebuilding or flashing the firmware.
+
+Wit.ai currently accepts up to 280 bytes of reply text per request. Longer
+replies are spoken only through that boundary but remain fully visible on
+screen. The local Wit test MP3 is excluded from Git.
 
 The board implementation is
 `firmware/esp32/components/muse/boards/board_waveshare_s3_lcd154.c`. It uses
