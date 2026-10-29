@@ -298,6 +298,24 @@ menu "Muse"
             a Wit.ai client token from a temporary local setup page after Wi-Fi
             setup. Factory reset removes it.
 
+    if MUSE_WIT_TTS
+
+        config MUSE_WIT_TTS_VOICE
+            string "Wit.ai synthesis voice"
+            default "Charlie"
+            help
+                Voice name sent to Wit.ai for reply speech and token validation.
+
+        config MUSE_WIT_TTS_MAX_BYTES
+            int "Maximum UTF-8 reply bytes sent to Wit.ai"
+            range 1 280
+            default 280
+            help
+                Maximum prefix of each completed reply sent for synthesis. Wit.ai
+                accepts at most 280 bytes. The complete reply remains on screen.
+
+    endif
+
     config MUSE_REALTIME_VOICE
         bool "Live voice calls with Muse (experimental)"
         depends on (MUSE_HATCH || HOMEHUB_VOICE) && SPIRAM

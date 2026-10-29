@@ -391,7 +391,7 @@ int main(int argc,char **argv) {
     def test_authorization_failures_closed_stream_and_timeout_recover(self):
         self.run_case(5)
 
-    def test_shared_voice_note_format_requests_voice_replies(self):
+    def test_shared_voice_note_format_requests_text_replies(self):
         self.run_case(6)
 
     def test_transcript_and_multiple_complete_lines_need_no_receive_allocation(self):

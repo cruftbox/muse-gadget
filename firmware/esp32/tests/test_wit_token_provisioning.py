@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Muse Gadget contributors.
+# SPDX-License-Identifier: Apache-2.0
+
 from __future__ import annotations
 
 import unittest
@@ -9,6 +12,7 @@ SETUP_C = ROOT / "main" / "wit_token_setup.c"
 CONFIG_STORE_C = ROOT / "main" / "config_store.c"
 MUSE_CMAKE = ROOT / "components" / "muse" / "CMakeLists.txt"
 CHAT_CPP = ROOT / "components" / "muse" / "muse_chat_session.cpp"
+MUSE_LINK_H = ROOT / "components" / "muse" / "muse_link.h"
 SETTINGS_UI_C = ROOT / "components" / "muse" / "muse_settings_ui.c"
 
 
@@ -33,6 +37,7 @@ class WitTokenProvisioningContractTest(unittest.TestCase):
         cls.config = CONFIG_STORE_C.read_text(encoding="utf-8")
         cls.cmake = MUSE_CMAKE.read_text(encoding="utf-8")
         cls.chat = CHAT_CPP.read_text(encoding="utf-8")
+        cls.link = MUSE_LINK_H.read_text(encoding="utf-8")
         cls.ui = SETTINGS_UI_C.read_text(encoding="utf-8")
 
     def test_build_has_no_embedded_wit_token(self) -> None:
@@ -74,6 +79,20 @@ class WitTokenProvisioningContractTest(unittest.TestCase):
         self.assertNotIn("%s", page)
         self.assertNotIn("WIT_TOKEN_KEY", page)
         self.assertIn("The stored token is never shown", page)
+
+    def test_audio_download_is_bounded_and_runs_outside_session_task(self) -> None:
+        self.assertIn("WIT_STREAM_BYTES (32 * 1024)", self.chat)
+        self.assertIn('xTaskCreateWithCaps(wit_tts_task, "wit_tts"', self.chat)
+        self.assertIn("xStreamBufferSend(s_wit_stream", self.chat)
+        self.assertIn("xStreamBufferReceive(s_wit_stream", self.chat)
+        self.assertIn("cancel_wit_tts();", self.chat)
+        self.assertIn("req->gen != s_gen.load()", self.chat)
+
+    def test_wit_request_settings_are_shared(self) -> None:
+        self.assertIn("MUSE_WIT_TTS_API_VERSION", self.link)
+        self.assertIn("MUSE_WIT_TTS_URL", self.link)
+        self.assertIn("CONFIG_MUSE_WIT_TTS_VOICE", self.chat)
+        self.assertIn("CONFIG_MUSE_WIT_TTS_MAX_BYTES", self.chat)
 
 
 if __name__ == "__main__":

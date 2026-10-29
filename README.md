@@ -31,56 +31,21 @@ changes, ESP-IDF, command-line tools, or firmware compilation.
 
 ## Current status
 
-- Board 1 identified over native USB Serial/JTAG as an ESP32-S3 on COM3.
-- Complete 16 MB factory flash backed up and verified with two independent reads.
-- The backup is `backups/factory-2026-10-29-80456b35af58.bin`, excluded from
-  Git, with SHA-256
-  `01146BC3F053CB9F2E498E62EE613AA7429073BAB2F5272D6F6949F0F1A4522A`.
-- Secure Boot and Flash Encryption are disabled.
-- Hardware documentation and current Muse SDK support have been reviewed.
-- Muse SDK revision `1db6a26f4ca56939c4465d8a12e241c1b1b5c8dc` is imported under
-  `firmware/` as a tracked Git subtree.
-- The board profile, pin map, build overlay, and Muse build-tool integration
-  are implemented on branch `port/waveshare-s3-touch-lcd-154`.
-- The Waveshare target compiles successfully with ESP-IDF 6.0.1. The signed
-  application image is 2,166,784 bytes and leaves 48% of each 4 MiB OTA
-  partition free.
-- Board 1 is running that build. The boot log reaches the setup screen without
-  a panic or reboot loop. Display, touch registration, battery reporting,
-  Bluetooth advertising, both microphones, the speaker codec, Wi-Fi scanning,
-  and the 8 MB PSRAM initialize successfully.
-- The screen is correctly oriented and shows `SET UP WI-FI` with Bluetooth
-  provisioning name `MuseGadget-35AF58`. USB status reports the same board,
-  95% battery, no saved Wi-Fi network, and `Ready to pair`.
-- The build contains no embedded Muse SDK token. The owner's SDK token is
-  provisioned at runtime over USB, retained in NVS across firmware flashes, and
-  reported by the boot log without exposing the complete token.
-- A complete Muse app setup trace showed pairing confirmation and Wi-Fi scanning
-  succeeding, followed by `provision_v2` failing before Wi-Fi connection. The
-  cause was the transient provisioning task requesting an 8 KiB internal-RAM
-  stack when the largest available block was 5 KiB.
-- Muse builds now use a 4 KiB provisioning stack because they save credentials
-  and restart before opening the TLS session that requires the upstream 8 KiB
-  stack. Non-Muse builds retain the 8 KiB allocation. The revised firmware is
-  built and flashed. Boot verification confirms the SDK token, display, touch,
-  speaker, both microphones, Wi-Fi scan, Bluetooth, and PSRAM initialize.
-- The subsequent Muse app setup stores pairing credentials and joins Wi-Fi.
-  Registration originally stalled because the normal 16 KiB DMA transmission
-  reserve exceeded the 12 KiB available after audio and TLS initialization.
-  Initial `link.register` transmission now uses an 8 KiB startup reserve while
-  retaining the 2 KiB contiguous AES allocation floor; normal traffic keeps the
-  16 KiB reserve. On-device verification shows `link.register` sent and
-  acknowledged, its tunnel opened, and the Link state changed to `Online`.
-- The on-device two-step reset was tested previously with a synthetic token. It
-  restarted the board with no SDK token, Wi-Fi credentials, or pairing state and
-  returned to `Ready to pair`, also verifying touch navigation.
-- Board 2 remains untouched.
+- Board 1 completes Muse pairing, Wi-Fi setup, voice capture, text replies, and
+  Wit.ai speech playback.
+- The owner's Muse SDK and Wit.ai tokens are provisioned at runtime. Neither is
+  embedded in the firmware.
+- Wit.ai setup is performed from a phone on the same Wi-Fi network. USB token
+  provisioning is no longer required.
+- A verified 16 MB factory backup exists outside Git. Board 2 remains untouched.
+- The Waveshare target builds with ESP-IDF 6.0.1.
 
 The verified backup is intentionally excluded from Git because it may contain
 device-specific data.
 
-The host-side config-store test is present, but it was skipped on this Windows
-host because no host C compiler is installed. The ESP-IDF target build passed.
+Detailed implementation and verification history is in
+[`docs/progress.md`](docs/progress.md). The board pin map and hardware notes are
+in [`docs/board-notes.md`](docs/board-notes.md).
 
 ## Important requirements
 
@@ -140,5 +105,7 @@ Waveshare factory BSP is a pin-map and bus-configuration reference only.
 
 ## License
 
-Project-authored code and documentation are licensed under the MIT License.
-Upstream Muse SDK code and third-party assets retain their original licenses.
+Project-authored code and documentation outside `firmware/` are licensed under
+the MIT License. The `firmware/` subtree is licensed under Apache-2.0 as stated
+in [`firmware/LICENSE`](firmware/LICENSE). Third-party assets retain their
+original licenses.

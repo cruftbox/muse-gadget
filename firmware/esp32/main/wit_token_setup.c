@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * Copyright (c) 2026 Muse Gadget contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "mbedtls/platform_util.h"
+#include "sdkconfig.h"
 
 #include "config_store.h"
 #include "muse_wifi.h"
@@ -176,11 +177,18 @@ typedef enum {
 
 static wit_check_t check_token(const char *token)
 {
-    static const char json[] =
-        "{\"q\":\"Wit.ai is ready.\",\"viseme\":\"false\","
-        "\"voice\":\"Charlie\",\"style\":\"default\"}";
+    cJSON *body = cJSON_CreateObject();
+    if (!body) return WIT_CHECK_UNAVAILABLE;
+    cJSON_AddStringToObject(body, "q", "Wit.ai is ready.");
+    cJSON_AddStringToObject(body, "viseme", "false");
+    cJSON_AddStringToObject(body, "voice", CONFIG_MUSE_WIT_TTS_VOICE);
+    cJSON_AddStringToObject(body, "style", "default");
+    char *json = cJSON_PrintUnformatted(body);
+    cJSON_Delete(body);
+    if (!json) return WIT_CHECK_UNAVAILABLE;
+
     esp_http_client_config_t cfg = {
-        .url = "https://api.wit.ai/synthesize?v=20250213",
+        .url = MUSE_WIT_TTS_URL,
         .method = HTTP_METHOD_POST,
         .timeout_ms = 20000,
         .buffer_size = 1024,
@@ -188,7 +196,10 @@ static wit_check_t check_token(const char *token)
         .crt_bundle_attach = esp_crt_bundle_attach,
     };
     esp_http_client_handle_t http = esp_http_client_init(&cfg);
-    if (!http) return WIT_CHECK_UNAVAILABLE;
+    if (!http) {
+        cJSON_free(json);
+        return WIT_CHECK_UNAVAILABLE;
+    }
 
     char auth[MUSE_WIT_TOKEN_MAX + 8];
     snprintf(auth, sizeof(auth), "Bearer %s", token);
@@ -197,8 +208,9 @@ static wit_check_t check_token(const char *token)
     esp_http_client_set_header(http, "Content-Type", "application/json");
 
     wit_check_t result = WIT_CHECK_UNAVAILABLE;
-    esp_err_t err = esp_http_client_open(http, sizeof(json) - 1);
-    if (err == ESP_OK && esp_http_client_write(http, json, sizeof(json) - 1) == (int)(sizeof(json) - 1)
+    size_t json_len = strlen(json);
+    esp_err_t err = esp_http_client_open(http, json_len);
+    if (err == ESP_OK && esp_http_client_write(http, json, json_len) == (int)json_len
         && esp_http_client_fetch_headers(http) >= 0) {
         int status = esp_http_client_get_status_code(http);
         if (status == 200) {
@@ -210,6 +222,7 @@ static wit_check_t check_token(const char *token)
     }
     esp_http_client_close(http);
     esp_http_client_cleanup(http);
+    cJSON_free(json);
     mbedtls_platform_zeroize(auth, sizeof(auth));
     return result;
 }

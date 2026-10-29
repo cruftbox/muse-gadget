@@ -31,6 +31,7 @@ class ChatSession(unittest.TestCase):
                      source.index('/* Speaker off:', source.index('static void start_tts('))]
         code = r'''
 #include <cassert>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -41,6 +42,8 @@ class ChatSession(unittest.TestCase):
 #include "minimp3.h"
 #include "muse_chat_priv.h"
 #define CONFIG_MUSE_WIT_TTS 1
+#define CONFIG_MUSE_WIT_TTS_MAX_BYTES 280
+#define CONFIG_MUSE_WIT_TTS_VOICE "Charlie"
 #define ESP_LOGI(...) ((void)0)
 #define ESP_LOGW(...) ((void)0)
 void mp3dec_init(mp3dec_t *dec) { memset(dec, 0, sizeof(*dec)); }
@@ -50,6 +53,7 @@ static char s_reply_shown[EV_TEXT];
 static int64_t s_last_seq, s_marks[4];
 static int captions, console_events;
 static bool speaker_on, wit_ok;
+static std::atomic<bool> s_wit_active{false};
 static char wit_text[TEXT_MAX];
 enum mark_t { M_TEXT, M_DONE, M_TTS };
 static void mark(mark_t) {}
@@ -199,7 +203,7 @@ static void tts_request_uses_reply_text() {
     start_tts();
     assert(s_turn.msgs[0].tts == TTS_ACTIVE && !s_turn.silent && s_turn.tts_msg == 0);
     assert(!strcmp(wit_text, "Spoken reply"));
-    assert(s_turn.mp3_ended);
+    assert(!s_turn.mp3_ended); /* the worker marks the stream ended asynchronously */
 }
 static void failed_tts_request_paces_captions() {
     voice_reply({"Readable fallback"});

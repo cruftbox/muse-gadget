@@ -43,6 +43,8 @@ typedef enum {
 } muse_link_state_t;
 
 #define MUSE_WIT_TOKEN_MAX 384
+#define MUSE_WIT_TTS_API_VERSION "20250213"
+#define MUSE_WIT_TTS_URL "https://api.wit.ai/synthesize?v=" MUSE_WIT_TTS_API_VERSION
 
 typedef enum {
     MUSE_WIT_UNCONFIGURED,
