@@ -2547,6 +2547,20 @@ extern "C" bool noise_ctrl_connect(const char *vm_id, const char *auth_token,
     return true;
 }
 
+extern "C" bool noise_ctrl_copy_credentials(char *vm_id, size_t id_cap,
+                                              char **auth_token) {
+    if (!vm_id || id_cap == 0 || !auth_token || !s_connect_mutex) return false;
+    *auth_token = nullptr;
+    xSemaphoreTake(s_connect_mutex, portMAX_DELAY);
+    bool available = s_vm_id[0] != '\0' && s_auth_token && s_auth_token[0] != '\0';
+    if (available) {
+        strlcpy(vm_id, s_vm_id, id_cap);
+        *auth_token = strdup(s_auth_token);
+    }
+    xSemaphoreGive(s_connect_mutex);
+    return available && *auth_token;
+}
+
 extern "C" bool noise_ctrl_reconnect(const char *network_ssid) {
     if (!s_connect_mutex) return false;
     char vm_id[sizeof(s_vm_id)];

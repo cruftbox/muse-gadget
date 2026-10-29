@@ -79,6 +79,10 @@ void noise_ctrl_set_power_save(bool on);
 bool noise_ctrl_connect(const char *vm_id, const char *auth_token,
                         const char *network_ssid);
 
+// Copies the VM credentials held by the current Home Link session. The caller
+// owns *auth_token and must free it. False means no session credentials exist.
+bool noise_ctrl_copy_credentials(char *vm_id, size_t id_cap, char **auth_token);
+
 void noise_ctrl_disconnect(void);
 
 // Starts the last session again, after noise_ctrl_disconnect(): the same VM

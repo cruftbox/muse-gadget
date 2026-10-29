@@ -2396,6 +2396,18 @@ static void hatch_vm_task(void *arg) {
 
 bool app_hatch_vm_credentials(const char *want_vm, char *vm_id, size_t id_cap,
                               char *vm_name, size_t name_cap, char **vm_token) {
+    char current_id[128];
+    char *current_token = NULL;
+    if (noise_ctrl_copy_credentials(current_id, sizeof(current_id), &current_token)) {
+        if (!want_vm || !want_vm[0] || strcmp(want_vm, current_id) == 0) {
+            strlcpy(vm_id, current_id, id_cap);
+            if (name_cap) vm_name[0] = '\0';
+            *vm_token = current_token;
+            return true;
+        }
+        free(current_token);
+    }
+
     hatch_vm_request_t req = {
         .want_vm = want_vm, .vm_id = vm_id, .id_cap = id_cap,
         .vm_name = vm_name, .name_cap = name_cap,

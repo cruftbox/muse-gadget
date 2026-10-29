@@ -112,6 +112,14 @@ activated:
 tools/muse/board.sh build lcd154
 ```
 
+The `lcd154` profile speaks completed text replies through Wit.ai. Put the Wit
+client token in the ignored repository-root `.wit-token` file as either the raw
+token or `wit_client_token="..."`, then build normally. The build embeds the
+token in the device firmware. The token and the local Wit test MP3 are excluded
+from Git. Wit.ai currently accepts up to 280 bytes of reply text per request;
+longer replies are spoken only through that boundary but remain fully visible
+on screen.
+
 The board implementation is
 `firmware/esp32/components/muse/boards/board_waveshare_s3_lcd154.c`. It uses
 the upstream Muse board interface and Espressif component drivers. The

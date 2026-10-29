@@ -57,6 +57,7 @@
 #include "esp_attr.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
+#include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
@@ -89,6 +90,10 @@ extern "C" {
 using namespace musegadgets::noise::core;
 
 static const char *TAG = "muse_chat_session";
+
+#if CONFIG_MUSE_WIT_TTS
+extern const uint8_t wit_token_start[] asm("_binary_wit_token_txt_start");
+#endif
 
 #define NOISE_PATH "/v1/noise"
 #define NOISE_PORT 443
@@ -188,13 +193,12 @@ static int64_t s_auto_backoff_us = AUTO_RETRY_MIN_US;
 
 /* ---- Streams on the connection ---- */
 
-enum kind_t : uint8_t { K_NONE, K_SUB, K_DICT, K_CHAT, K_TTS, K_CALL, K_END_CALL };
+enum kind_t : uint8_t { K_NONE, K_SUB, K_DICT, K_CHAT, K_CALL, K_END_CALL };
 
 struct stream_t {
     int64_t id;
     kind_t kind;
     int status;
-    int msg;                 /* K_TTS: index into the turn's messages */
     char *line;              /* NDJSON line / buffered body */
     size_t cap;              /* line's size: NDJSON_LINE_MAX, grown for long event lines */
     size_t len;
@@ -728,7 +732,6 @@ static int64_t open_stream(kind_t kind, const char *verb, const char *path, cons
     slot->id = id;
     slot->kind = kind;
     slot->status = 0;
-    slot->msg = -1;
     slot->len = 0;
     slot->overflow = false;
     ESP_LOGI(TAG, "stream %lld: %s %s", (long long)id, verb, path);
@@ -973,11 +976,6 @@ static void turn_reset_streams(void)
 {
     send_reset(s_turn.dict_id);
     send_reset(s_turn.chat_id);
-    for (auto &s : s_streams) {
-        if (s.kind == K_TTS) {
-            send_reset(s.id);
-        }
-    }
 }
 
 static void turn_finish(void)
@@ -1553,43 +1551,22 @@ static void on_chat_ack(stream_t *s)
 
 /* ---- Turn: speech ---- */
 
-static void start_tts(void)
+static void start_silent(int i, const char *why)
 {
-    if (s_turn.tts_msg >= 0) {
-        return;
-    }
-    for (int i = 0; i < s_turn.nmsgs; i++) {
-        msg_t &m = s_turn.msgs[i];
-        if (m.tts != TTS_QUEUED) {
-            continue;
-        }
-        /*
-         * Replies are text, shown at reading pace: silence in place of speech
-         * paces the captions and ends the turn. To speak them instead, send
-         * the message's text (s_turn.texts + i * TEXT_MAX, if texts was
-         * allocated; up to TEXT_MAX - 1 bytes) to a TTS API of your choice and
-         * play the MP3 it returns. In place of the silence below: keep
-         * m.tts = TTS_ACTIVE and s_turn.tts_msg = i, set s_turn.silent = false,
-         * m.pcm_start = s_turn.pcm_out, m.pcm_frames = 0, s_turn.mp3_len = 0,
-         * s_turn.mp3_ended = false, s_turn.kbps = 0, s_turn.down_rate = 0 and
-         * mp3dec_init(&s_turn.dec). Then, on this task, pass the MP3 to
-         * tts_data() as it arrives (it buffers up to MP3_BUF and drops the
-         * rest, so hold off while it's full) and set s_turn.mp3_ended at the
-         * end. decode() plays it at the speaker's volume, captions following,
-         * and finishes the message once it's drained.
-         */
-        m.pcm_start = s_turn.pcm_out;
-        /* Paced to the text kept: a reply longer than TEXT_MAX shows what was
-         * kept at reading pace, not stretched over the whole reply's time. */
-        size_t shown = s_turn.texts ? strlen(s_turn.texts + i * TEXT_MAX) : m.len;
-        m.pcm_frames = (uint32_t)(shown * MIC_RATE / TEXT_CHARS_PER_S);
-        m.tts = TTS_ACTIVE;
-        s_turn.tts_msg = i;
-        s_turn.silent = true;
-        ESP_LOGI(TAG, "showing message %s (%u chars)", m.id, (unsigned)m.len);
-        show_reply_start(m);
-        return;
-    }
+    (void)why;   /* Some release log levels compile out the message below. */
+    msg_t &m = s_turn.msgs[i];
+    m.pcm_start = s_turn.pcm_out;
+    /* Pace what the display retained, rather than stretching a truncated
+     * caption over the full reply's reading time. */
+    size_t shown = s_turn.texts ? strlen(s_turn.texts + i * TEXT_MAX) : m.len;
+    m.pcm_frames = (uint32_t)(shown * MIC_RATE / TEXT_CHARS_PER_S);
+    m.tts = TTS_ACTIVE;
+    s_turn.tts_msg = i;
+    s_turn.silent = true;
+    s_turn.mp3_len = 0;
+    s_turn.mp3_ended = false;
+    ESP_LOGI(TAG, "showing message %s (%u chars): %s", m.id, (unsigned)m.len, why);
+    show_reply_start(m);
 }
 
 static void tts_data(const uint8_t *data, size_t len)
@@ -1603,18 +1580,136 @@ static void tts_data(const uint8_t *data, size_t len)
     s_turn.mp3_len += len;
 }
 
-static void tts_end(stream_t *s, bool ok)
+#if CONFIG_MUSE_WIT_TTS
+static size_t wit_text_length(const char *text)
 {
-    int i = s->msg;
-    close_stream(s);
-    if (i < 0 || i != s_turn.tts_msg) {
+    size_t full = strlen(text);
+    size_t n = full < 280 ? full : 280;
+    while (n && (static_cast<unsigned char>(text[n]) & 0xc0) == 0x80) {
+        n--;
+    }
+    return n;
+}
+
+static bool fetch_wit_tts(int i)
+{
+    const char *text = s_turn.texts ? s_turn.texts + i * TEXT_MAX : nullptr;
+    if (!text || !text[0]) {
+        return false;
+    }
+    size_t text_len = wit_text_length(text);
+    char spoken[281];
+    memcpy(spoken, text, text_len);
+    spoken[text_len] = '\0';
+    if (text[text_len]) {
+        ESP_LOGW(TAG, "Wit.ai TTS text truncated to %u bytes", (unsigned)text_len);
+    }
+
+    cJSON *body = cJSON_CreateObject();
+    if (!body) {
+        return false;
+    }
+    cJSON_AddStringToObject(body, "q", spoken);
+    cJSON_AddStringToObject(body, "viseme", "false");
+    cJSON_AddStringToObject(body, "voice", "Charlie");
+    cJSON_AddStringToObject(body, "style", "default");
+    char *json = cJSON_PrintUnformatted(body);
+    cJSON_Delete(body);
+    if (!json) {
+        return false;
+    }
+
+    esp_http_client_config_t cfg = {};
+    cfg.url = "https://api.wit.ai/synthesize?v=20250213";
+    cfg.method = HTTP_METHOD_POST;
+    cfg.timeout_ms = 20000;
+    cfg.buffer_size = 4096;
+    cfg.buffer_size_tx = 1024;
+    cfg.crt_bundle_attach = esp_crt_bundle_attach;
+    esp_http_client_handle_t http = esp_http_client_init(&cfg);
+    if (!http) {
+        free(json);
+        return false;
+    }
+
+    char auth[512];
+    snprintf(auth, sizeof(auth), "Bearer %s", reinterpret_cast<const char *>(wit_token_start));
+    esp_http_client_set_header(http, "Authorization", auth);
+    esp_http_client_set_header(http, "Accept", "audio/mpeg");
+    esp_http_client_set_header(http, "Content-Type", "application/json");
+
+    bool ok = false;
+    esp_err_t err = esp_http_client_open(http, strlen(json));
+    if (err == ESP_OK) {
+        int written = esp_http_client_write(http, json, strlen(json));
+        if (written == (int)strlen(json) && esp_http_client_fetch_headers(http) >= 0) {
+            int status = esp_http_client_get_status_code(http);
+            if (status == 200) {
+                uint8_t chunk[2048];
+                while (true) {
+                    int got = esp_http_client_read(http, reinterpret_cast<char *>(chunk), sizeof(chunk));
+                    if (got < 0) {
+                        break;
+                    }
+                    if (!got) {
+                        ok = s_turn.mp3_len > 0;
+                        break;
+                    }
+                    tts_data(chunk, got);
+                }
+            } else {
+                ESP_LOGW(TAG, "Wit.ai TTS returned HTTP %d", status);
+            }
+        } else {
+            ESP_LOGW(TAG, "Wit.ai TTS request write failed");
+        }
+    } else {
+        ESP_LOGW(TAG, "Wit.ai TTS connection failed: %s", esp_err_to_name(err));
+    }
+    esp_http_client_close(http);
+    esp_http_client_cleanup(http);
+    free(json);
+    return ok;
+}
+#endif
+
+static void start_tts(void)
+{
+    if (s_turn.tts_msg >= 0) {
         return;
     }
-    if (ok) {
-        s_turn.mp3_ended = true;   /* decode() drains the rest, then finishes */
-    } else {
-        s_turn.msgs[i].tts = TTS_FINISHED;
-        s_turn.tts_msg = -1;
+    for (int i = 0; i < s_turn.nmsgs; i++) {
+        msg_t &m = s_turn.msgs[i];
+        if (m.tts != TTS_QUEUED) {
+            continue;
+        }
+        if (!muse_settings_speaker_on()) {
+            start_silent(i, "speaker off");
+            return;
+        }
+        m.pcm_start = s_turn.pcm_out;
+        m.pcm_frames = 0;
+        m.tts = TTS_ACTIVE;
+        s_turn.tts_msg = i;
+        s_turn.silent = false;
+        s_turn.mp3_len = 0;
+        s_turn.mp3_ended = false;
+        s_turn.kbps = 0;
+        s_turn.down_rate = 0;
+        mp3dec_init(&s_turn.dec);
+        mark(M_TTS);
+        ESP_LOGI(TAG, "speaking message %s (%u chars)", m.id, (unsigned)m.len);
+        show_reply_start(m);
+#if CONFIG_MUSE_WIT_TTS
+        if (fetch_wit_tts(i)) {
+            s_turn.mp3_ended = true;
+        } else {
+            start_silent(i, "Wit.ai TTS unavailable");
+        }
+#else
+        start_silent(i, "TTS not configured");
+#endif
+        return;
     }
 }
 
@@ -1806,11 +1901,6 @@ static void stream_data(stream_t *s, ConstByteSpan data)
         s->len += take;
         break;
     }
-    case K_TTS:
-        if (s->msg == s_turn.tts_msg) {
-            tts_data(data.data(), data.size());
-        }
-        break;
 #if CONFIG_MUSE_REALTIME_VOICE
     case K_CALL:
     case K_END_CALL:
@@ -1842,9 +1932,6 @@ static bool stream_end(stream_t *s, bool ok)
         if (!ok) {
             turn_fail("MUSE DIDN'T TAKE IT");
         }
-        break;
-    case K_TTS:
-        tts_end(s, ok);
         break;
 #if CONFIG_MUSE_REALTIME_VOICE
     case K_CALL:

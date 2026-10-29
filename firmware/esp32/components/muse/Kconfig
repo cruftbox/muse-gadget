@@ -288,6 +288,16 @@ menu "Muse"
             them. Needs PSRAM. Without it, voice notes go over Home Link's own
             session to its paired VM and replies are shown as text.
 
+    config MUSE_WIT_TTS
+        bool "Speak text replies with Wit.ai"
+        depends on MUSE_HATCH && SPIRAM
+        default n
+        help
+            POST each completed text reply to Wit.ai and play its MP3 response
+            through the existing Muse decoder and speaker path. The build reads
+            the Wit client token from WIT_CLIENT_TOKEN or the repository-root
+            .wit-token file. That local file must not be committed.
+
     config MUSE_REALTIME_VOICE
         bool "Live voice calls with Muse (experimental)"
         depends on (MUSE_HATCH || HOMEHUB_VOICE) && SPIRAM

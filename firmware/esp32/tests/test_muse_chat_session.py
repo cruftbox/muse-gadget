@@ -25,8 +25,10 @@ class ChatSession(unittest.TestCase):
         types = source[source.index('enum phase_t'):source.index('/* 10 KB')]
         handlers = source[source.index('static int find_msg('):source.index('static void on_chat_ack(')]
         reset = source[source.index('static bool turn_start('):source.index('static void turn_begin(')]
-        tts = source.index('static void start_tts(void)')
-        start_tts = source[tts:source.index('\n}\n', tts) + 3]
+        silent = source[source.index('static void start_silent('):
+                        source.index('static void tts_data(')]
+        tts = source[source.index('static void start_tts('):
+                     source.index('/* Speaker off:', source.index('static void start_tts('))]
         code = r'''
 #include <cassert>
 #include <cstdint>
@@ -38,13 +40,18 @@ class ChatSession(unittest.TestCase):
 #include "cJSON.h"
 #include "minimp3.h"
 #include "muse_chat_priv.h"
+#define CONFIG_MUSE_WIT_TTS 1
 #define ESP_LOGI(...) ((void)0)
+#define ESP_LOGW(...) ((void)0)
+void mp3dec_init(mp3dec_t *dec) { memset(dec, 0, sizeof(*dec)); }
 ''' + constants + types + r'''
 static turn_t s_turn;
 static char s_reply_shown[EV_TEXT];
 static int64_t s_last_seq, s_marks[4];
 static int captions, console_events;
-enum mark_t { M_TEXT, M_DONE };
+static bool speaker_on, wit_ok;
+static char wit_text[TEXT_MAX];
+enum mark_t { M_TEXT, M_DONE, M_TTS };
 static void mark(mark_t) {}
 static int64_t now_us() { return 12345; }
 static void emit(muse_hatch_ev_t type, const char *) {
@@ -59,8 +66,13 @@ static void turn_finish() { s_turn.phase = P_IDLE; }
 static void turn_fail(const char *) { turn_finish(); }
 static bool ensure_connected() { return true; }
 bool muse_hatch_configured() { return true; }
+bool muse_settings_speaker_on() { return speaker_on; }
 static void resampler_init(resampler_t *, int, int) {}
-''' + reset + handlers + start_tts + r'''
+static bool fetch_wit_tts(int i) {
+    strlcpy(wit_text, s_turn.texts + i * TEXT_MAX, sizeof(wit_text));
+    return wit_ok;
+}
+''' + reset + handlers + silent + tts + r'''
 static void begin(bool typed = false) {
     assert(turn_start(s_turn.gen + 1, typed));
     s_turn.phase = P_WAIT_REPLY;
@@ -68,6 +80,9 @@ static void begin(bool typed = false) {
     strlcpy(s_turn.user_ids[0], "note", sizeof(s_turn.user_ids[0]));
     strlcpy(s_turn.user_ids[1], "parent", sizeof(s_turn.user_ids[1]));
     captions = console_events = 0;
+    speaker_on = false;
+    wit_ok = true;
+    wit_text[0] = '\0';
 }
 static void event(const char *kind, const char *id, const char *parent = "", const char *text = "") {
     cJSON *root = cJSON_CreateObject(), *payload = cJSON_CreateObject();
@@ -178,6 +193,28 @@ static void paced_to_the_kept_text() {
     assert(s_turn.msgs[0].pcm_frames == (uint32_t)(11 * MIC_RATE / TEXT_CHARS_PER_S));
     s_turn.texts = nullptr;
 }
+static void tts_request_uses_reply_text() {
+    voice_reply({"Spoken reply"});
+    speaker_on = true;
+    start_tts();
+    assert(s_turn.msgs[0].tts == TTS_ACTIVE && !s_turn.silent && s_turn.tts_msg == 0);
+    assert(!strcmp(wit_text, "Spoken reply"));
+    assert(s_turn.mp3_ended);
+}
+static void failed_tts_request_paces_captions() {
+    voice_reply({"Readable fallback"});
+    speaker_on = true;
+    wit_ok = false;
+    start_tts();
+    assert(s_turn.msgs[0].tts == TTS_ACTIVE && s_turn.silent && s_turn.tts_msg == 0);
+    assert(s_turn.msgs[0].pcm_frames == (uint32_t)(17 * MIC_RATE / TEXT_CHARS_PER_S));
+}
+static void empty_voice_reply_is_not_queued_for_tts() {
+    begin();
+    event("message.assistant", "voice-only", "note", "");
+    assert(s_turn.nmsgs == 1 && s_turn.msgs[0].done);
+    assert(s_turn.msgs[0].len == 0 && s_turn.msgs[0].tts == TTS_NONE);
+}
 int main(int argc, char **argv) {
     assert(argc == 2);
     switch (atoi(argv[1])) {
@@ -187,6 +224,9 @@ int main(int argc, char **argv) {
     case 3: cut_inside_a_character(); break;
     case 4: character_split_across_pieces(); break;
     case 5: paced_to_the_kept_text(); break;
+    case 6: tts_request_uses_reply_text(); break;
+    case 7: failed_tts_request_paces_captions(); break;
+    case 8: empty_voice_reply_is_not_queued_for_tts(); break;
     default: return 2;
     }
 }
@@ -228,3 +268,12 @@ int main(int argc, char **argv) {
 
     def test_long_reply_is_paced_to_the_text_kept(self):
         self.run_case(5)
+
+    def test_tts_request_uses_reply_text(self):
+        self.run_case(6)
+
+    def test_failed_tts_request_falls_back_to_caption_pacing(self):
+        self.run_case(7)
+
+    def test_empty_voice_reply_is_not_queued_for_tts(self):
+        self.run_case(8)

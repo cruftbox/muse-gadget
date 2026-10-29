@@ -69,6 +69,8 @@ static const char *TAG = "board";
 #define I2S_DIN GPIO_NUM_11
 #define I2S_DOUT GPIO_NUM_12
 #define PA_EN GPIO_NUM_7
+#define I2S_DMA_DESC 4
+#define I2S_DMA_FRAMES 160
 
 #define PLUS_GPIO GPIO_NUM_4
 #define POWER_GPIO GPIO_NUM_5
@@ -287,6 +289,11 @@ static esp_err_t audio_init(esp_codec_dev_handle_t *speaker, esp_codec_dev_handl
     i2s_chan_handle_t tx, rx;
     i2s_chan_config_t channel_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     channel_cfg.auto_clear = true;
+    /* Keep 40 ms of DMA in each direction. The IDF defaults reserve 90 ms
+     * per channel, which leaves too little contiguous DMA RAM in the
+     * realtime-voice build for the second half of this duplex bus. */
+    channel_cfg.dma_desc_num = I2S_DMA_DESC;
+    channel_cfg.dma_frame_num = I2S_DMA_FRAMES;
     ESP_RETURN_ON_ERROR(i2s_new_channel(&channel_cfg, &tx, &rx), TAG, "I2S channel");
     const i2s_std_config_t std_cfg = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(MUSE_AUDIO_RATE),

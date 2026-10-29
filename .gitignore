@@ -12,6 +12,8 @@ sdkconfig.old
 # Local secrets and environment files.
 .env
 *.local
+.wit-token
+.wit-test.mp3
 
 # Editor and operating-system files.
 .vscode/
