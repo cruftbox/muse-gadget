@@ -36,6 +36,15 @@ changes, ESP-IDF, command-line tools, or firmware compilation.
 - Complete 16 MB factory flash backed up and verified with two independent reads.
 - Secure Boot and Flash Encryption are disabled.
 - Hardware documentation and current Muse SDK support have been reviewed.
+- Muse SDK revision `1db6a26f4ca56939c4465d8a12e241c1b1b5c8dc` is imported under
+  `firmware/` as a tracked Git subtree.
+- The board profile, pin map, build overlay, and Muse build-tool integration
+  are implemented on branch `port/waveshare-s3-touch-lcd-154`.
+- The Waveshare target compiles successfully with ESP-IDF 6.0.1. The signed
+  application image is 2,166,784 bytes and leaves 48% of each 4 MiB OTA
+  partition free.
+- Hardware validation and recipient setup remain in progress. The build is
+  intentionally missing a Muse SDK token until runtime provisioning is ready.
 - No Muse firmware has been written to the board.
 
 The verified backup is intentionally excluded from Git because it may contain
@@ -61,6 +70,20 @@ device-specific data.
 
 The detailed working requirements and phased plan are in
 [`muse-gadget-port-prompt.md`](muse-gadget-port-prompt.md).
+
+## Firmware build
+
+The board alias is `lcd154`. From `firmware/esp32`, with ESP-IDF 6.0.1
+activated:
+
+```sh
+tools/muse/board.sh build lcd154
+```
+
+The board implementation is
+`firmware/esp32/components/muse/boards/board_waveshare_s3_lcd154.c`. It uses
+the upstream Muse board interface and Espressif component drivers. The
+Waveshare factory BSP is a pin-map and bus-configuration reference only.
 
 ## License
 
