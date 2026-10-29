@@ -1,0 +1,20 @@
+# Device-specific flash backups may contain credentials or calibration data.
+backups/
+
+# ESP-IDF generated files.
+build/
+build-*/
+managed_components/
+dependencies.lock
+sdkconfig
+sdkconfig.old
+
+# Local secrets and environment files.
+.env
+*.local
+
+# Editor and operating-system files.
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
