@@ -106,6 +106,18 @@ class LinkNoiseSessionTest(unittest.TestCase):
         self.assertIn("args->session_generation = session_generation", app)
         self.assertIn("args->session_generation, args->request_id", app)
 
+    def test_registration_uses_startup_dma_reserve_and_contiguous_floor(self) -> None:
+        noise = NOISE_C.read_text()
+        sender = _function_body(noise, "static json_send_status send_json_body_chunk(")
+
+        self.assertIn("body.is_registration", sender)
+        self.assertIn("LINK_REGISTER_DMA_RESERVE_BYTES", sender)
+        self.assertIn("noise_tx_has_dma_headroom(nullptr)", sender)
+        self.assertIn("noise_tx_has_contiguous_dma_headroom()", sender)
+        self.assertIn(
+            "#define LINK_REGISTER_DMA_RESERVE_BYTES (8 * 1024)", noise
+        )
+
     def test_upgrade_request_and_classification(self) -> None:
         """Runs tests/link_noise_upgrade_harness.c.
 

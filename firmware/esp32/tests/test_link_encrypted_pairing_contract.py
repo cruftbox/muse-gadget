@@ -159,12 +159,13 @@ class LinkEncryptedPairingContractTest(unittest.TestCase):
             provision_v2_block.index("xTaskCreate(provision_task"),
         )
         self.assertIn('!= pdPASS', provision_v2_block)
-        self.assertIn("secure_free_str(a->password)", provision_v2_block)
-        self.assertIn("secure_free_str(a->access_token)", provision_v2_block)
-        self.assertIn("secure_free_str(a->refresh_token)", provision_v2_block)
-        self.assertIn("secure_free_str(a->api_url)", provision_v2_block)
-        self.assertIn("secure_free_str(a->api_url_v2)", provision_v2_block)
-        self.assertIn("secure_free_str(a->noise_host)", provision_v2_block)
+        self.assertIn("free_provision_args(a)", provision_v2_block)
+
+        self.assertIn("#define PROVISION_TASK_STACK_BYTES 4096", source)
+        self.assertIn("#define PROVISION_TASK_STACK_BYTES 8192", source)
+        worker = _function_body(source, "static void provision_task(")
+        self.assertIn("free_provision_args(a)", worker)
+        self.assertIn("vTaskDelete(NULL)", worker)
 
     def test_decrypted_setup_actions_require_confirmed_session(self) -> None:
         source = BLE_SERVER_C.read_text()
@@ -323,13 +324,13 @@ class LinkEncryptedPairingContractTest(unittest.TestCase):
         ble = BLE_SERVER_C.read_text()
         delete_json = _function_body(ble, "static void delete_command_json(")
         wipe = _function_body(ble, "static void wipe_json_strings(")
-        provision_task = _function_body(ble, "static void provision_task(")
+        free_args = _function_body(ble, "static void free_provision_args(")
         dispatch = _function_body(ble, "static void dispatch_command_ex(")
 
         self.assertIn("wipe_json_strings(root)", delete_json)
         self.assertIn("mbedtls_platform_zeroize(cur->valuestring", wipe)
-        self.assertIn("secure_free_str(a->password)", provision_task)
-        self.assertIn("secure_free_str(a->access_token)", provision_task)
+        self.assertIn("secure_free_str(a->password)", free_args)
+        self.assertIn("secure_free_str(a->access_token)", free_args)
         self.assertIn("mbedtls_platform_zeroize(plain", dispatch)
 
     def test_wifi_scan_results_require_encrypted_pairing(self) -> None:

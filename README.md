@@ -52,10 +52,28 @@ changes, ESP-IDF, command-line tools, or firmware compilation.
 - The screen is correctly oriented and shows `SET UP WI-FI` with Bluetooth
   provisioning name `MuseGadget-35AF58`. USB status reports the same board,
   95% battery, no saved Wi-Fi network, and `Ready to pair`.
-- The build contains no Muse SDK token. A synthetic token was successfully
-  provisioned over USB and loaded after restart. The on-device two-step reset
-  then restarted the board with no SDK token, no Wi-Fi credentials, no pairing,
-  and status `Ready to pair`. This also verified touch navigation.
+- The build contains no embedded Muse SDK token. The owner's SDK token is
+  provisioned at runtime over USB, retained in NVS across firmware flashes, and
+  reported by the boot log without exposing the complete token.
+- A complete Muse app setup trace showed pairing confirmation and Wi-Fi scanning
+  succeeding, followed by `provision_v2` failing before Wi-Fi connection. The
+  cause was the transient provisioning task requesting an 8 KiB internal-RAM
+  stack when the largest available block was 5 KiB.
+- Muse builds now use a 4 KiB provisioning stack because they save credentials
+  and restart before opening the TLS session that requires the upstream 8 KiB
+  stack. Non-Muse builds retain the 8 KiB allocation. The revised firmware is
+  built and flashed. Boot verification confirms the SDK token, display, touch,
+  speaker, both microphones, Wi-Fi scan, Bluetooth, and PSRAM initialize.
+- The subsequent Muse app setup stores pairing credentials and joins Wi-Fi.
+  Registration originally stalled because the normal 16 KiB DMA transmission
+  reserve exceeded the 12 KiB available after audio and TLS initialization.
+  Initial `link.register` transmission now uses an 8 KiB startup reserve while
+  retaining the 2 KiB contiguous AES allocation floor; normal traffic keeps the
+  16 KiB reserve. On-device verification shows `link.register` sent and
+  acknowledged, its tunnel opened, and the Link state changed to `Online`.
+- The on-device two-step reset was tested previously with a synthetic token. It
+  restarted the board with no SDK token, Wi-Fi credentials, or pairing state and
+  returned to `Ready to pair`, also verifying touch navigation.
 - Board 2 remains untouched.
 
 The verified backup is intentionally excluded from Git because it may contain

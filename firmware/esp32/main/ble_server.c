@@ -69,6 +69,13 @@ static const ble_uuid128_t TX_UUID = BLE_UUID128_INIT(
 #define CHUNK_HEADER_BYTES 3
 #define CHUNK_MAGIC        0xFE
 #define MAX_RX_TOTAL_BYTES 8192
+#if CONFIG_MUSE_ENABLED
+// Muse stores pairing credentials and restarts before opening its TLS session.
+// The larger stack is needed only by builds that connect TLS during provisioning.
+#define PROVISION_TASK_STACK_BYTES 4096
+#else
+#define PROVISION_TASK_STACK_BYTES 8192
+#endif
 
 static ble_callbacks_t s_cb = {0};
 static const char *s_device_name = NULL;
@@ -151,6 +158,20 @@ static void delete_command_json(cJSON *root, bool decrypted) {
     cJSON_Delete(root);
 }
 
+static void free_provision_args(provision_args_t *a) {
+    if (!a) return;
+    secure_free_str(a->ssid);
+    secure_free_str(a->password);
+    secure_free_str(a->access_token);
+    secure_free_str(a->refresh_token);
+    secure_free_str(a->username);
+    secure_free_str(a->ota_url);
+    secure_free_str(a->api_url);
+    secure_free_str(a->api_url_v2);
+    secure_free_str(a->noise_host);
+    free(a);
+}
+
 static void provision_task(void *arg) {
     provision_args_t *a = (provision_args_t *)arg;
     if (s_cb.on_provision
@@ -167,16 +188,7 @@ static void provision_task(void *arg) {
                           a->noise_host ? a->noise_host : "",
                           a->session_generation);
     }
-    secure_free_str(a->ssid);
-    secure_free_str(a->password);
-    secure_free_str(a->access_token);
-    secure_free_str(a->refresh_token);
-    secure_free_str(a->username);
-    secure_free_str(a->ota_url);
-    secure_free_str(a->api_url);
-    secure_free_str(a->api_url_v2);
-    secure_free_str(a->noise_host);
-    free(a);
+    free_provision_args(a);
     stack_monitor_record(NULL);
     vTaskDelete(NULL);
 }
@@ -465,22 +477,12 @@ static void dispatch_command_ex(const uint8_t *data, size_t len, bool decrypted)
             if (cJSON_IsString(nh) && nh->valuestring && *nh->valuestring) {
                 a->noise_host = dup_str(nh->valuestring);
             }
-            // 8 KB stack — mbedtls 3.6 (IDF v6) needs significantly more
-            // stack during TLS handshake than v5's 3.x (~2 KB more peak).
             a->session_generation = link_pairing_mark_provisioning_active();
             if (a->session_generation == 0
-                || xTaskCreate(provision_task, "prov", 8192, a, 5, NULL) != pdPASS) {
+                || xTaskCreate(provision_task, "prov", PROVISION_TASK_STACK_BYTES,
+                               a, 5, NULL) != pdPASS) {
                 uint32_t generation = a->session_generation;
-                secure_free_str(a->ssid);
-                secure_free_str(a->password);
-                secure_free_str(a->access_token);
-                secure_free_str(a->refresh_token);
-                secure_free_str(a->username);
-                secure_free_str(a->ota_url);
-                secure_free_str(a->api_url);
-                secure_free_str(a->api_url_v2);
-                secure_free_str(a->noise_host);
-                free(a);
+                free_provision_args(a);
                 ble_server_send_pairing_status("error_operation_in_progress", generation);
                 ble_server_disconnect_pairing_session(generation);
             }

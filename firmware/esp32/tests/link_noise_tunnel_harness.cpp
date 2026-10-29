@@ -469,6 +469,20 @@ static void test_control_burst_pressure() {
         for (int i = 0; i < 4 && control_tx.json; ++i) assert(!control_tx_turn());
         assert(!control_tx.json && control_bytes == old_wire_bytes(json));
     }
+
+    // Registration is the prerequisite for tunnel traffic, so it uses the
+    // smaller startup reserve while retaining the contiguous AES floor.
+    reset_control();
+    const std::string registration = "{\"method\":\"link.register\"}";
+    control_tx = {strdup(registration.c_str()), registration.size(), 0, false, 1};
+    control_tx.is_registration = true;
+    dma_free = 8 * 1024 - 1;
+    dma_largest = 4 * 1024;
+    assert(!control_tx_turn());
+    assert(control_tx.json_offset == 0 && control_bytes.empty());
+    dma_free = 8 * 1024;
+    assert(!control_tx_turn());
+    assert(!control_tx.json && control_bytes == old_wire_bytes(registration));
 }
 static void test_ping_fragmentation() {
     reset_control();

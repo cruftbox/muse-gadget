@@ -869,6 +869,12 @@ struct pending_json_body {
     bool is_heartbeat = false;
 };
 
+// Registration must precede tunnel traffic. It can safely use half of the
+// normal burst reserve because no tunnel batches or daemon requests can send
+// until the server acknowledges it. The contiguous AES allocation floor still
+// applies below.
+#define LINK_REGISTER_DMA_RESERVE_BYTES (8 * 1024)
+
 static void clear_pending_json_body(pending_json_body &body) {
     free(body.json);
     body = {};
@@ -891,7 +897,11 @@ static json_send_status send_json_body_chunk(esp_tls_t *tls, ClientSession &sess
     }
     // Recheck both budgets before EVERY chunk, including retained registration:
     // the queue-boundary sample cannot cover later turns of a paused message.
-    if (!noise_tx_has_dma_headroom(nullptr)
+    bool has_total_headroom = body.is_registration
+        ? heap_caps_get_free_size(MALLOC_CAP_DMA)
+              >= LINK_REGISTER_DMA_RESERVE_BYTES
+        : noise_tx_has_dma_headroom(nullptr);
+    if (!has_total_headroom
         || !noise_tx_has_contiguous_dma_headroom()) {
         return json_send_status::Pending;
     }
