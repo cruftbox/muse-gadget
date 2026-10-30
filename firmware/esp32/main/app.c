@@ -1689,6 +1689,32 @@ static bool reset_setup_from_control(const char *source) {
     return true;
 }
 
+#if CONFIG_MUSE_ENABLED
+static bool reset_owner_setup_from_control(const char *source) {
+    if (!operation_gate_take(portMAX_DELAY, source)) {
+        ESP_LOGE(TAG, "%s could not acquire the setup operation gate", source);
+        return false;
+    }
+    auth_lock_take();
+    bool owner_tokens_cleared = config_clear_owner_tokens();
+    auth_lock_give();
+    if (!owner_tokens_cleared) {
+        ESP_LOGE(TAG, "%s owner token deletion could not be verified", source);
+        operation_gate_give();
+        return false;
+    }
+    bool reset = reset_setup_with_gate_held(source);
+    if (!reset) {
+        operation_gate_give();
+        return false;
+    }
+    // Keep the gate reserved until reboot so no setup writer can recreate
+    // credentials after the verified erase.
+    restart_after_setup_reset();
+    return true;
+}
+#endif
+
 static void reset_default_vm_with_gate_held(void) {
     config_erase_key("vm_url");
     ble_server_send_status("vm_switching");
@@ -2444,7 +2470,7 @@ bool app_confirm_pairing_press(void) {
 
 static void reset_setup_task(void *arg) {
     (void)arg;
-    reset_setup_from_control("Muse menu reset");
+    reset_owner_setup_from_control("Muse menu reset");
     stack_monitor_record(NULL);
     vTaskDelete(NULL);
 }

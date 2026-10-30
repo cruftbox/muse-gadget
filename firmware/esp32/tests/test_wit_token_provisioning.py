@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SETUP_C = ROOT / "main" / "wit_token_setup.c"
 CONFIG_STORE_C = ROOT / "main" / "config_store.c"
+APP_C = ROOT / "main" / "app.c"
 MUSE_CMAKE = ROOT / "components" / "muse" / "CMakeLists.txt"
 CHAT_CPP = ROOT / "components" / "muse" / "muse_chat_session.cpp"
 MUSE_LINK_H = ROOT / "components" / "muse" / "muse_link.h"
@@ -35,6 +36,7 @@ class WitTokenProvisioningContractTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.setup = SETUP_C.read_text(encoding="utf-8")
         cls.config = CONFIG_STORE_C.read_text(encoding="utf-8")
+        cls.app = APP_C.read_text(encoding="utf-8")
         cls.cmake = MUSE_CMAKE.read_text(encoding="utf-8")
         cls.chat = CHAT_CPP.read_text(encoding="utf-8")
         cls.link = MUSE_LINK_H.read_text(encoding="utf-8")
@@ -46,13 +48,24 @@ class WitTokenProvisioningContractTest(unittest.TestCase):
         self.assertNotIn("wit_token_start", self.chat)
         self.assertIn("muse_link_wit_token_get", self.chat)
 
-    def test_pairing_and_setup_reset_erase_wit_token(self) -> None:
+    def test_recovery_preserves_wit_token_and_owner_reset_erases_it(self) -> None:
         pairing = _function_body(self.config, "bool config_clear_pairing(")
         setup = _function_body(self.config, "bool config_clear_setup(")
-        self.assertIn('"wit_token"', pairing)
-        self.assertIn('"wit_token"', setup)
+        owner = _function_body(self.config, "bool config_clear_owner_tokens(")
+        menu = _function_body(self.app, "static void reset_setup_task(")
+        owner_reset = _function_body(
+            self.app, "static bool reset_owner_setup_from_control("
+        )
+        self.assertNotIn('"wit_token"', pairing)
+        self.assertNotIn('"wit_token"', setup)
+        self.assertIn('"wit_token"', owner)
         self.assertIn("clear_and_verify", pairing)
         self.assertIn("clear_and_verify", setup)
+        self.assertIn("clear_and_verify", owner)
+        self.assertIn('reset_owner_setup_from_control("Muse menu reset")', menu)
+        self.assertIn("config_clear_owner_tokens()", owner_reset)
+        self.assertIn("if (!owner_tokens_cleared)", owner_reset)
+        self.assertEqual(self.app.count("reset_owner_setup_from_control("), 2)
 
     def test_token_is_validated_before_it_is_stored(self) -> None:
         handler = _function_body(self.setup, "static esp_err_t token_handler(")

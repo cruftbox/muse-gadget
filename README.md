@@ -152,8 +152,10 @@ token:
 
 The gadget validates the token before storing it. It never displays the stored
 token. The temporary setup page stops after submission, cancellation, leaving
-the Sound page, or five minutes. **Remove Wit.ai token** and the gadget's
-pairing reset both delete it. Implementation and security details are in
+the Sound page, or five minutes. **Remove Wit.ai token** deletes it directly.
+The explicit **Settings > Muse > Reset pairing** transfer reset deletes both
+owner-provided service tokens. Automatic pairing recovery preserves them.
+Implementation and security details are in
 [`docs/wit-token-provisioning.md`](docs/wit-token-provisioning.md).
 
 ### Test the gadget

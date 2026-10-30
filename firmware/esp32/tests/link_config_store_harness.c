@@ -218,7 +218,7 @@ static void test_erase_propagates_commit_failure(void) {
 static void test_setup_clear_verifies_credentials_and_preserves_identity(void) {
     static const char *const setup_keys[] = {
         "access_token", "refresh_token", "auth_token", "vm_url", "username",
-        "pair_sdk_hint", "sdk_token", "ssid", "password", "wifi_channel",
+        "pair_sdk_hint", "ssid", "password", "wifi_channel",
         "setup_complete", "api_url", "api_url_v2", "noise_host",
     };
     fake_reset();
@@ -226,6 +226,8 @@ static void test_setup_clear_verifies_credentials_and_preserves_identity(void) {
         fake_put(setup_keys[i], "credential");
     }
     fake_put("device_state", "device-identity");
+    fake_put("sdk_token", "mgst_owner");
+    fake_put("wit_token", "wit_owner");
 
     CHECK(config_clear_setup(), "setup clear should succeed");
     for (size_t i = 0; i < sizeof(setup_keys) / sizeof(setup_keys[0]); i++) {
@@ -237,6 +239,10 @@ static void test_setup_clear_verifies_credentials_and_preserves_identity(void) {
           "unrelated device state was deleted");
     CHECK(strcmp(identity, "device-identity") == 0,
           "unrelated device state changed");
+    CHECK(config_key_lookup("sdk_token") == CONFIG_KEY_FOUND,
+          "setup clear deleted the owner's SDK token");
+    CHECK(config_key_lookup("wit_token") == CONFIG_KEY_FOUND,
+          "setup clear deleted the owner's Wit token");
 }
 
 static void test_pairing_clear_preserves_wifi_channel(void) {
@@ -253,12 +259,32 @@ static void test_pairing_clear_preserves_wifi_channel(void) {
           "pairing token was not deleted");
     CHECK(config_key_lookup("pair_sdk_hint") == CONFIG_KEY_NOT_FOUND,
           "the SDK token pairing used was not forgotten");
-    CHECK(config_key_lookup("sdk_token") == CONFIG_KEY_NOT_FOUND,
-          "the stored SDK token was not deleted");
+    CHECK(config_key_lookup("sdk_token") == CONFIG_KEY_FOUND,
+          "pairing clear deleted the owner's SDK token");
     CHECK(config_key_lookup("ssid") == CONFIG_KEY_FOUND,
           "pairing clear deleted wifi credentials");
     CHECK(config_key_lookup("wifi_channel") == CONFIG_KEY_FOUND,
           "pairing clear deleted wifi channel");
+}
+
+static void test_owner_token_clear_is_explicit_and_verified(void) {
+    fake_reset();
+    fake_put("sdk_token", "mgst_owner");
+    fake_put("wit_token", "wit_owner");
+    fake_put("access_token", "device-token");
+
+    CHECK(config_clear_owner_tokens(), "owner token clear should succeed");
+    CHECK(config_key_lookup("sdk_token") == CONFIG_KEY_NOT_FOUND,
+          "SDK token was not deleted");
+    CHECK(config_key_lookup("wit_token") == CONFIG_KEY_NOT_FOUND,
+          "Wit token was not deleted");
+    CHECK(config_key_lookup("access_token") == CONFIG_KEY_FOUND,
+          "owner token clear deleted Muse device credentials");
+
+    fake_put("sdk_token", "mgst_owner");
+    s_commit_error_key = "sdk_token";
+    CHECK(!config_clear_owner_tokens(),
+          "owner token clear must fail when an erase is uncommitted");
 }
 
 static void test_setup_clear_fails_closed_on_uncommitted_credential(void) {
@@ -297,6 +323,7 @@ int main(void) {
     test_erase_propagates_commit_failure();
     test_setup_clear_verifies_credentials_and_preserves_identity();
     test_pairing_clear_preserves_wifi_channel();
+    test_owner_token_clear_is_explicit_and_verified();
     test_setup_clear_fails_closed_on_uncommitted_credential();
     test_reset_clears_endpoints_before_credentials();
     puts("config_store harness: PASS");

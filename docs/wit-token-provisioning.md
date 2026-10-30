@@ -23,13 +23,15 @@ The implementation has four relevant pieces:
 - `muse_chat_session.cpp` obtains a bounded runtime copy when it sends a Wit.ai
   synthesis request, then clears its token and Authorization buffers.
 - `main/config_store.c` persists account credentials in the `homehub` NVS
-  namespace and verifies that factory-reset erasures succeeded.
+  namespace, preserves owner-provided service tokens during automatic
+  recovery, and verifies that transfer-reset erasures succeeded.
 - The Sound settings page starts and stops the local setup server and reports
   its state without exposing the token.
 
 The runtime token belongs in `config_store`, not `muse_settings`. It is an
-account credential that factory reset must erase, while the `muse` namespace is
-primarily retained user preferences such as volume and brightness.
+owner-provided credential that the explicit transfer reset must erase, while
+automatic pairing recovery preserves it. The `muse` namespace is primarily
+retained user preferences such as volume and brightness.
 
 ## Selected design
 
@@ -114,15 +116,13 @@ Starting the server requires a local touch action. It listens only while the
 configuration screen is active and stops after five minutes. Only one client
 and one request body are processed at a time.
 
-## Factory reset
+## Transfer reset
 
-Add `wit_token` to both credential-erasure paths in `config_store.c`:
-
-- pairing reset, because the token belongs to the current owner;
-- full setup reset.
-
-Both paths must use the existing erase-and-readback verification. A factory
-reset is unsuccessful if the token cannot be verified absent.
+The shared pairing and setup recovery paths preserve `sdk_token` and
+`wit_token`. The explicit **Settings > Muse > Reset pairing** action calls the
+separate owner-token erasure before clearing the remaining setup. Both erasures
+use the existing erase-and-readback verification. The transfer reset is
+unsuccessful if either owner token cannot be verified absent.
 
 ## User interface
 
@@ -156,7 +156,8 @@ settings.
 Host tests must cover:
 
 - NVS read, write, replace, remove, and maximum-length handling;
-- factory reset erasing and verifying `wit_token`;
+- automatic recovery preserving `wit_token` and the explicit transfer reset
+  erasing and verifying it;
 - a build with Wit TTS enabled and no build-time token;
 - missing, malformed, oversized, and extra HTTP form fields;
 - failed validation preserving the prior token;
@@ -173,8 +174,8 @@ Hardware acceptance requires:
 4. Store a working token, restart the gadget, and receive a spoken reply.
 5. Replace the token and confirm that the replacement is used.
 6. Remove the token and confirm that replies remain visible but silent.
-7. Factory-reset the gadget and verify that Wi-Fi, Muse pairing, SDK token, and
-   Wit token are all absent.
+7. Use **Settings > Muse > Reset pairing** and verify that Wi-Fi, Muse pairing,
+   SDK token, and Wit token are all absent.
 
 ## Deferred work
 

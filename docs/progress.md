@@ -32,6 +32,9 @@ The imported Muse Gadget SDK revision is
 - Added phone-based Wit.ai client-token setup. The gadget validates the token
   before storing it, never displays the stored token, and removes it through
   the Sound settings or setup reset.
+- Separated owner-provided SDK and Wit tokens from shared recovery clears.
+  Automatic pairing/setup recovery now preserves them; the explicit Muse menu
+  transfer reset erases both with NVS readback verification.
 - Changed Wit.ai speech retrieval to a bounded PSRAM stream. A worker performs
   the HTTPS download while the Muse session task incrementally receives and
   decodes audio. Turn generation changes cancel obsolete downloads.

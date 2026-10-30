@@ -22,8 +22,8 @@
 // Persistent key/value config stored in NVS.
 // Setup keys: ssid, password, wifi_channel, wifi_others, wifi_hidden (see
 // wifi_known.h), access_token, refresh_token, vm_url, username, api_url,
-// api_url_v2, noise_host, setup_complete, wit_token. Device-level keys are
-// preserved by config_clear_pairing() and config_clear_setup().
+// api_url_v2, noise_host, setup_complete. Owner-provided sdk_token and
+// wit_token are preserved by config_clear_pairing() and config_clear_setup().
 // auth_token is a legacy alias from early Link firmware and is only kept
 // long enough to migrate by minting a device token pair.
 // All getters return true on success and write a NUL-terminated string
@@ -42,16 +42,20 @@ bool config_set_str(const char *key, const char *value);
 bool config_erase_key(const char *key);
 config_key_lookup_t config_key_lookup(const char *key);
 
-// Pairing convenience: removes tokens, vm_url, username, account-specific
-// endpoint overrides.
-// WiFi credentials and any device-level keys are preserved.
+// Pairing convenience: removes Muse device credentials, vm_url, username and
+// account-specific endpoint overrides. WiFi credentials and owner-provided
+// SDK/Wit tokens are preserved.
 bool config_clear_pairing(void);
 
-// Full local setup reset: removes WiFi, tokens, vm_url, username, endpoint
-// overrides, and the setup-complete marker. Returns true
+// Full local setup reset: removes WiFi, Muse device credentials, vm_url,
+// username, endpoint overrides, and the setup-complete marker. Returns true
 // only after every credential is durably erased and a readback reports it absent.
-// Device-level keys are preserved.
+// Owner-provided SDK/Wit tokens are preserved.
 bool config_clear_setup(void);
+
+// Transfer-to-a-new-owner reset: removes owner-provided service tokens.
+// Returns true only after both keys are durably erased and verified absent.
+bool config_clear_owner_tokens(void);
 
 bool config_is_provisioned(void);
 bool config_setup_complete(void);
