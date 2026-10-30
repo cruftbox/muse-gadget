@@ -14,7 +14,8 @@ Build a handheld Muse voice companion that supports:
 - Consumer-style first-run setup
 - Factory reset and transfer to another Muse account
 
-The intended recipient must be able to complete setup without source-code
+After the firmware and the owner's Muse SDK token are loaded, the intended
+recipient can complete pairing, Wi-Fi, and speech setup without source-code
 changes, ESP-IDF, command-line tools, or firmware compilation.
 
 ## Hardware
@@ -35,8 +36,8 @@ changes, ESP-IDF, command-line tools, or firmware compilation.
   Wit.ai speech playback.
 - The owner's Muse SDK and Wit.ai tokens are provisioned at runtime. Neither is
   embedded in the firmware.
-- Wit.ai setup is performed from a phone on the same Wi-Fi network. USB token
-  provisioning is no longer required.
+- The Muse SDK token still requires a one-time USB serial transfer. Wit.ai
+  setup is performed from a phone on the same Wi-Fi network.
 - A verified 16 MB factory backup exists outside Git. Board 2 remains untouched.
 - The Waveshare target builds with ESP-IDF 6.0.1.
 
@@ -63,40 +64,113 @@ in [`docs/board-notes.md`](docs/board-notes.md).
 - [Waveshare examples](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-1.54)
 - [Muse Gadget SDK token terms](https://gadgets.muse.ai/sdk-terms)
 
-## Project notes
+## Install the firmware
 
-The detailed working requirements and phased plan are in
-[`muse-gadget-port-prompt.md`](muse-gadget-port-prompt.md).
+This section is for the person preparing the gadget. A recipient who receives
+an already prepared gadget can skip to [Configure a prepared gadget](#configure-a-prepared-gadget).
 
-## Firmware build
+### Requirements
 
-The board alias is `lcd154`. From `firmware/esp32`, with ESP-IDF 6.0.1
-activated:
+- Waveshare ESP32-S3-Touch-LCD-1.54 and a USB-C data cable
+- Git and Python 3
+- ESP-IDF 6.0.1, activated in the current shell
+- A complete 16 MB backup of the board's original flash, stored outside Git
+
+The repository's general web flasher does not currently list the `lcd154`
+target. Build and flash this board with its existing wrapper instead of choosing
+another board profile. This repository also has no published web-flasher site,
+so loading the Muse SDK token remains a preparer step over USB.
+
+From `firmware/esp32`:
 
 ```sh
 tools/muse/board.sh build lcd154
+tools/muse/board.sh flash lcd154
 ```
 
-The `lcd154` profile speaks completed text replies through Wit.ai. Each owner
-stores their own Wit.ai client token after completing Muse and Wi-Fi setup:
+The flash command finds the board's native USB Serial/JTAG port when only one
+matching board is connected. Pass a port as the final argument if detection is
+ambiguous:
 
-1. Open the Wit.ai app settings on a phone and copy its client access token.
-2. On the gadget, open **Settings > Sound > Wit.ai token** and tap
-   **Configure**.
-3. Open the local URL shown by the gadget from a phone on the same Wi-Fi
-   network.
-4. Paste the token and tap **Save and test**.
+```sh
+tools/muse/board.sh flash lcd154 COM3
+```
 
-The gadget validates the token with Wit.ai before storing it. The temporary
-local setup page closes after success, cancellation, leaving the Sound page, or
-five minutes. The stored token is never displayed. It is removed by **Remove**
-on the Sound page and by the gadget's setup reset. No computer, firmware rebuild,
-or USB data connection is required. Implementation and security details are in
+Reflashing preserves the Muse pairing, Wi-Fi settings, Muse SDK token, and
+Wit.ai token. Do not erase the flash unless the intention is to remove all
+stored setup data.
+
+### Load the owner's Muse SDK token
+
+Every gadget needs the owner's Muse SDK token before it can pair. Obtain one
+from [Muse Gadget SDK tokens](https://gadgets.muse.ai/settings/sdk-tokens),
+open the gadget's USB serial port at 115200 baud, and send this single line:
+
+```text
+>sdk_token=mgst_your_token_here
+```
+
+The gadget replies `@sdk_token ok` and restarts. Do not place the real token in
+a script, build option, source file, or Git commit. Loading this token is a
+one-time USB step; later firmware updates preserve it.
+
+## Configure a prepared gadget
+
+These steps require no firmware changes, ESP-IDF installation, or command-line
+work.
+
+### Pair with Muse and connect Wi-Fi
+
+1. Install the Muse app on the owner's phone and sign in to the owner's Muse
+   account.
+2. Power on the gadget. Its setup screen shows a name beginning with
+   `MuseGadget-`.
+3. In the Muse app, open **Settings > Devices** and enable **Developer mode**.
+4. Tap the **+** button, select the matching `MuseGadget-` device, and tap
+   **Connect**.
+5. Read the community-device warning and select **Continue anyway** only if
+   this is the expected gadget and firmware.
+6. Enter the Wi-Fi network and password when the app asks for them. The phone
+   and gadget must use the same local network for the remaining setup.
+7. Return to **Settings > Devices**. Setup is complete when the gadget appears
+   under **Other devices**. If the app returns to the connection page after
+   accepting Wi-Fi, close and reopen the Muse app once, then check the Devices
+   page again.
+
+### Enable spoken replies with Wit.ai
+
+The `lcd154` profile shows Muse's complete text reply and speaks up to the first
+280 bytes through Wit.ai. Each owner supplies their own Wit.ai client access
+token:
+
+1. Create or open a Wit.ai app and copy its client access token.
+2. On the gadget, open **Settings > Sound** and tap **Configure Wit.ai token**.
+3. The gadget displays a temporary local URL. Open it on a phone connected to
+   the same Wi-Fi network.
+4. Paste the client access token and tap **Save and test**.
+5. Return to the gadget's Sound page and confirm it reports **Wit.ai ready**.
+
+The gadget validates the token before storing it. It never displays the stored
+token. The temporary setup page stops after submission, cancellation, leaving
+the Sound page, or five minutes. **Remove Wit.ai token** and the gadget's
+pairing reset both delete it. Implementation and security details are in
 [`docs/wit-token-provisioning.md`](docs/wit-token-provisioning.md).
 
-Wit.ai currently accepts up to 280 bytes of reply text per request. Longer
-replies are spoken only through that boundary but remain fully visible on
-screen.
+### Test the gadget
+
+1. Set the speaker volume under **Settings > Sound**.
+2. Hold `+/KEY`, speak a short request, and release the button to send it.
+3. Confirm that the reply appears as text and plays through the speaker.
+
+## Controls and reset
+
+- Hold `+/KEY` to record a voice request; release it to send.
+- Use `BOOT/-` as the auxiliary control.
+- Use `PWR` for sleep and shutdown.
+- To transfer the gadget to another owner, open **Settings > Muse** and tap
+  **Reset pairing** twice within five seconds. This removes Wi-Fi, Muse pairing,
+  the Muse SDK token, and the Wit.ai token, then returns the gadget to initial
+  setup.
 
 The board implementation is
 `firmware/esp32/components/muse/boards/board_waveshare_s3_lcd154.c`. It uses
