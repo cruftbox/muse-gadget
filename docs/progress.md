@@ -48,6 +48,24 @@ OTA application partition.
 
 The asynchronous Wit build was flashed to Board 1 on October 29, 2026. Its boot
 log confirmed retained Wi-Fi and pairing credentials, successful display and
-audio initialization, connection to the Muse VM, and OTA image validation. The
-new streaming path is boot-verified but still requires an end-to-end voice
-request before it can be called functionally device-verified.
+audio initialization, connection to the Muse VM, and OTA image validation.
+End-to-end testing then verified a real push-to-talk request, a visible Muse
+text reply, streamed 24 kHz mono MP3 playback through the onboard speaker, and
+normal turn completion.
+
+The runtime Wit.ai token setup was also verified after separating its temporary
+local HTTP server from HTTPS validation. The setup server now stops before the
+gadget opens the Wit.ai connection, and the validated token is committed to NVS
+on the existing internal-stack keeper task. Board 1 accepted the token, retained
+it, and produced a spoken reply after the final flash.
+
+## Remaining work
+
+- Add the `lcd154` target to the existing web-flasher build matrix and board
+  picker, activate the imported GitHub Pages workflow at the repository root,
+  and verify first installation and Muse SDK token transfer on Board 1.
+- Perform a clean handoff test after resetting the gadget, using a different
+  owner's Muse account, Muse SDK token, Wi-Fi, and Wit.ai token.
+- Verify battery-only operation and charging with the replacement battery. The
+  original installed battery did not keep the gadget powered after USB was
+  disconnected.
