@@ -61,11 +61,31 @@ it, and produced a spoken reply after the final flash.
 
 ## Remaining work
 
-- Add the `lcd154` target to the existing web-flasher build matrix and board
-  picker, activate the imported GitHub Pages workflow at the repository root,
-  and verify first installation and Muse SDK token transfer on Board 1.
 - Perform a clean handoff test after resetting the gadget, using a different
   owner's Muse account, Muse SDK token, Wi-Fi, and Wit.ai token.
 - Verify battery-only operation and charging with the replacement battery. The
   original installed battery did not keep the gadget powered after USB was
   disconnected.
+
+## Deferred web-flasher concept
+
+A browser flasher is not planned for this project. Its implementation and
+maintenance cost are disproportionate to this one-device handoff. The existing
+source build and USB serial token procedure remain the supported installation
+path.
+
+If the project is expanded later, most of the browser interface already exists
+under `firmware/web-flasher`. A narrow implementation would:
+
+- add `muse-waveshare-s3-lcd154` to the existing board list;
+- add a root GitHub Actions workflow that builds only the `lcd154` target,
+  generates its ESP Web Tools manifest, and deploys the static files;
+- host the page over public HTTPS, or serve it from localhost for private use;
+- flash through Web Serial, then send the owner's Muse SDK token directly from
+  the browser to the gadget over USB serial; and
+- verify first installation, wrong-board rejection, SDK-token transfer, and an
+  update that preserves Wi-Fi, pairing, and stored tokens.
+
+The page would not need a backend or token database. A public deployment would
+make the compiled firmware downloadable, while Muse SDK tokens would remain in
+the user's browser and USB connection.
