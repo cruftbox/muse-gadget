@@ -62,13 +62,20 @@ gadget opens the Wit.ai connection, and the validated token is committed to NVS
 on the existing internal-stack keeper task. Board 1 accepted the token, retained
 it, and produced a spoken reply after the final flash.
 
+A replacement battery was installed in Board 1 on November 2, 2026. The gadget
+keeps running with USB disconnected, which the original battery did not do. It
+reports 83 percent, about 4.05 V, on battery and 95 percent, about 4.16 V, on
+USB. The USB reading stayed at 95 percent across 7 samples over about 2.5
+minutes. The USB figure probably reflects charger voltage rather than state of
+charge, so the unplugged reading is the better estimate. Charging and battery
+runtime have not been verified. This build does not report the charge-status
+pin over serial; it appears only on the screen.
+
 ## Remaining work
 
 - Perform a clean handoff test after resetting the gadget, using a different
   owner's Muse account, Muse SDK token, Wi-Fi, and Wit.ai token.
-- Verify battery-only operation and charging with the replacement battery. The
-  original installed battery did not keep the gadget powered after USB was
-  disconnected.
+- Verify charging and battery runtime with the replacement battery.
 
 ## Deferred web-flasher concept
 
