@@ -17,6 +17,14 @@ the page, so it's needed once per gadget. The firmware side is
 console, other boards on the console UART and the chip's USB Serial/JTAG
 port. It's serial-only, so it can't be set over BLE.
 
+Opening native USB serial can restart an ESP32-S3. A serial client must prove
+that the application console is ready before assuming a credential write was
+received. An interactive client should complete a `>status` / `@status`
+round trip and send the token without closing the port. This page instead
+keeps the port open and retries the token command until it receives
+`@sdk_token ok` or a specific `@sdk_token error ...`; a write without one of
+those responses is not success.
+
 ## Catching the wrong board
 
 ESP Web Tools refuses a board whose chip doesn't match the build's. On top of

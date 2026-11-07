@@ -112,11 +112,25 @@ idf.py build
 This builds for the ESP32-C5 DevKitC-1. The firmware lands in
 `build/muse-gadget.bin`.
 
-A build without a token can get one later over serial: send the line
-`>sdk_token=mgst_…` on the board's console, and it stores the token in NVS,
-answers `@sdk_token ok` and restarts with it. A stored token takes precedence
-over the build's. The [web flasher](../web-flasher/README.md) does this for
-you after installing.
+A build without a token can get one later over serial. Open the board's console
+at 115200 baud, but account for native USB opening resetting some ESP32-S3
+boards. In one continuous serial session:
+
+1. Send a blank line and `>status`.
+2. Wait for a complete `@status {...}` response. If the board restarted, wait
+   for boot to finish and repeat this step.
+3. Send `>sdk_token=mgst_…`.
+4. Require the response `@sdk_token ok` before treating the operation as
+   successful.
+5. After the automatic restart, confirm that the boot log's `SDK token:` line
+   contains a short token hint rather than `(none)`.
+
+The status handshake matters: it proves that the Muse console input task is
+running before the credential is sent. A fixed delay after opening the port is
+not equivalent. The gadget stores the token in NVS, and a stored token takes
+precedence over the build's. Never put a real token in a script, command line,
+source file, log or commit. The [web flasher](../web-flasher/README.md) handles
+serial readiness and retries for you after installing.
 
 Muse records a gadget's SDK token when the gadget pairs, and nowhere else. If
 you change the token on a paired gadget, or revoke the one it paired with,

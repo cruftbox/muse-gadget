@@ -103,16 +103,40 @@ stored setup data.
 ### Load the owner's Muse SDK token
 
 Every gadget needs the owner's Muse SDK token before it can pair. Obtain one
-from [Muse Gadget SDK tokens](https://gadgets.muse.ai/settings/sdk-tokens),
-open the gadget's USB serial port at 115200 baud, and send this single line:
+from [Muse Gadget SDK tokens](https://gadgets.muse.ai/settings/sdk-tokens).
+Connect the gadget by USB and open its serial port at 115200 baud.
+
+Opening the ESP32-S3 native USB serial port can restart the gadget. Do not send
+the token immediately after opening the port or rely on a fixed startup delay.
+First, send a blank line followed by:
+
+```text
+>status
+```
+
+Wait for a complete `@status {...}` response. If the board restarts, wait for
+it to finish booting and send `>status` again. Keep the same serial session
+open after the status response, then send:
 
 ```text
 >sdk_token=mgst_your_token_here
 ```
 
-The gadget replies `@sdk_token ok` and restarts. Do not place the real token in
-a script, build option, source file, or Git commit. Loading this token is a
-one-time USB step; later firmware updates preserve it.
+The gadget must reply `@sdk_token ok`; otherwise, do not assume the token was
+stored. It then restarts. The boot log shows `SDK token:` followed by a short
+token hint instead of `(none)`, which verifies that the token was loaded from
+NVS.
+
+Do not place the real token in a script, shell command, build option, source
+file, log, or Git commit. Loading this token is a one-time USB step; later
+firmware updates preserve it. The verified sequence is therefore:
+
+1. Open the port at 115200 baud.
+2. Complete a `>status` / `@status` round trip.
+3. Send `>sdk_token=...` without closing the port.
+4. Require `@sdk_token ok`.
+5. After restart, verify that the boot log no longer reports
+   `SDK token: (none)`.
 
 ## Configure a prepared gadget
 
