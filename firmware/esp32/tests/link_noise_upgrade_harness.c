@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -87,12 +88,73 @@ static void test_the_worst_case_macro_is_actually_the_worst_case(void) {
 
 #define UUID "4e024627-69ec-4c83-a7fa-9ff8b8d73c61"
 #define TOKEN "s0:eyJ0eXAiOiJKV1QifQ.eyJvdCI6ImFiYyJ9.c2ln"
+#define WS_KEY "AAECAwQFBgcICQoLDA0ODw=="   // bytes 0x00..0x0f
+
+static int build_with_key(const char *vm_id, const char *token,
+                          const char *ws_key, char *out, size_t out_cap) {
+    return noise_upgrade_build_request("/v1/noise", vm_id,
+                                       "muse-gadget.vm.example", token,
+                                       ws_key, out, out_cap);
+}
 
 static int build(const char *vm_id, const char *token, char *out,
                  size_t out_cap) {
-    return noise_upgrade_build_request("/v1/noise", vm_id,
-                                       "muse-gadget.vm.example", token,
-                                       out, out_cap);
+    return build_with_key(vm_id, token, WS_KEY, out, out_cap);
+}
+
+// ---- Sec-WebSocket-Key ------------------------------------------------------
+
+static void expect_key(const uint8_t nonce[NOISE_UPGRADE_WS_NONCE_LEN],
+                       const char *want) {
+    char key[NOISE_UPGRADE_WS_KEY_LEN + 1];
+    memset(key, '#', sizeof(key));
+    noise_upgrade_ws_key(nonce, key);
+    assert(strcmp(key, want) == 0);
+    assert(noise_upgrade_ws_key_valid(key));
+}
+
+static void test_the_key_encoder_matches_known_vectors(void) {
+    // RFC 6455 section 1.3's sample nonce must encode to its sample key.
+    expect_key((const uint8_t *)"the sample nonce", "dGhlIHNhbXBsZSBub25jZQ==");
+
+    uint8_t nonce[NOISE_UPGRADE_WS_NONCE_LEN];
+    for (int i = 0; i < NOISE_UPGRADE_WS_NONCE_LEN; i++) nonce[i] = (uint8_t)i;
+    expect_key(nonce, WS_KEY);
+
+    memset(nonce, 0xff, sizeof(nonce));
+    expect_key(nonce, "/////////////////////w==");
+    memset(nonce, 0x00, sizeof(nonce));
+    expect_key(nonce, "AAAAAAAAAAAAAAAAAAAAAA==");
+}
+
+static void test_the_request_carries_the_supplied_key(void) {
+    char req[1024];
+    assert(build_with_key(UUID, TOKEN, "dGhlIHNhbXBsZSBub25jZQ==", req,
+                          sizeof(req)) > 0);
+    assert(strstr(req, "\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n")
+           != NULL);
+
+    assert(build(UUID, TOKEN, req, sizeof(req)) > 0);
+    assert(strstr(req, "\r\nSec-WebSocket-Key: " WS_KEY "\r\n") != NULL);
+    // No fixed key left behind in the template.
+    assert(strstr(req, "dGhlIHNhbXBsZSBub25jZQ==") == NULL);
+}
+
+static void test_a_malformed_key_is_refused(void) {
+    char req[1024];
+    const char *bad[] = {
+        NULL,
+        "",
+        "AAECAwQFBgcICQoLDA0ODw=",       // 23 chars
+        "AAECAwQFBgcICQoLDA0ODw===",     // 25 chars
+        "AAECAwQFBgcICQoLDA0ODwAA",      // no padding
+        "AAECAwQFBgcICQoLDA0OD-==",      // not Base64
+        "AAECAwQFBgcICQoLDA0O\r\n==",    // header injection
+    };
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        assert(build_with_key(UUID, TOKEN, bad[i], req, sizeof(req)) == -1);
+        assert(!noise_upgrade_ws_key_valid(bad[i]));
+    }
 }
 
 static void test_the_request_carries_the_exact_token_in_a_header(void) {
@@ -273,6 +335,10 @@ int main(void) {
     test_high_bytes_are_encoded_not_truncated();
     test_a_too_small_buffer_fails_rather_than_truncating();
     test_the_worst_case_macro_is_actually_the_worst_case();
+
+    test_the_key_encoder_matches_known_vectors();
+    test_the_request_carries_the_supplied_key();
+    test_a_malformed_key_is_refused();
 
     test_the_request_carries_the_exact_token_in_a_header();
     test_a_real_uuid_produces_a_byte_identical_target();

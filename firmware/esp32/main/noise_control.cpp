@@ -687,9 +687,14 @@ static noise_upgrade_result_t ws_upgrade(esp_tls_t *tls) {
         ESP_LOGE(TAG, "upgrade req malloc failed");
         return NOISE_UPGRADE_FAILED;
     }
+    // RFC 6455: a fresh random nonce for every connection attempt.
+    uint8_t nonce[NOISE_UPGRADE_WS_NONCE_LEN];
+    char ws_key[NOISE_UPGRADE_WS_KEY_LEN + 1];
+    esp_fill_random(nonce, sizeof(nonce));
+    noise_upgrade_ws_key(nonce, ws_key);
     int req_len = noise_upgrade_build_request(
         NOISE_PATH, s_vm_id, s_noise_host,
-        s_auth_token ? s_auth_token : "", req, req_cap);
+        s_auth_token ? s_auth_token : "", ws_key, req, req_cap);
 
     if (req_len <= 0) {
         ESP_LOGE(TAG, "upgrade request rejected before send");

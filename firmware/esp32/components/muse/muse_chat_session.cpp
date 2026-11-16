@@ -62,6 +62,7 @@
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "esp_tls.h"
+#include "mbedtls/base64.h"
 #include "mbedtls/platform_util.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/idf_additions.h"
@@ -545,6 +546,15 @@ static int ws_upgrade(esp_tls_t *tls, const char *vm_id, const char *token)
         query_escape(CONFIG_MUSE_REALTIME_VOICE_APP_ID, app + 8, sizeof(app) - 8);
     }
 #endif
+    /* RFC 6455: Sec-WebSocket-Key is a fresh random 16-byte nonce, Base64. */
+    unsigned char nonce[16];
+    char ws_key[25];
+    size_t key_len = 0;
+    esp_fill_random(nonce, sizeof(nonce));
+    if (mbedtls_base64_encode(reinterpret_cast<unsigned char *>(ws_key), sizeof(ws_key), &key_len,
+                              nonce, sizeof(nonce)) != 0 || key_len != 24) {
+        return 0;
+    }
     size_t cap = 512 + strlen(id) + strlen(app) + strlen(token) + strlen(s_host);
     char *req = static_cast<char *>(malloc(cap));
     if (!req) {
@@ -557,9 +567,9 @@ static int ws_upgrade(esp_tls_t *tls, const char *vm_id, const char *token)
                        "Upgrade: websocket\r\n"
                        "Connection: Upgrade\r\n"
                        "Sec-WebSocket-Version: 13\r\n"
-                       "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                       "Sec-WebSocket-Key: %s\r\n"
                        "\r\n",
-                       id, app, s_host, token);
+                       id, app, s_host, token, ws_key);
     bool sent = write_all(tls, req, len);
     free(req);
     if (!sent) {
