@@ -3,6 +3,8 @@
 This repository tracks the port of Meta's Muse Gadget SDK to the Waveshare
 ESP32-S3-Touch-LCD-1.54.
 
+<img src="docs/images/muse-gadget-waveshare.jpg" alt="The Waveshare gadget in a white case, showing the Muse character, a READY status, and the caption CALL ENDED: ALL QUIET" width="400">
+
 ## Goal
 
 Build a handheld Muse voice companion that supports:
@@ -38,6 +40,8 @@ changes, ESP-IDF, command-line tools, or firmware compilation.
   embedded in the firmware.
 - The Muse SDK token still requires a one-time USB serial transfer. Wit.ai
   setup is performed from a phone on the same Wi-Fi network.
+- Board 1 runs on battery with USB disconnected after a battery replacement.
+  Charging and battery runtime have not been verified.
 - A verified 16 MB factory backup exists outside Git. Board 2 remains untouched.
 - The Waveshare target builds with ESP-IDF 6.0.1.
 
