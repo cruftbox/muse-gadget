@@ -18,6 +18,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -70,6 +71,51 @@ static inline int noise_upgrade_query_escape(const char *in, char *out,
     return (int)w;
 }
 
+// Sec-WebSocket-Key is the Base64 encoding of a 16-byte nonce: 24 characters,
+// ending in "==". RFC 6455 section 4.1 requires a fresh random nonce for each
+// connection; the caller supplies the bytes (esp_fill_random on the device).
+#define NOISE_UPGRADE_WS_NONCE_LEN 16
+#define NOISE_UPGRADE_WS_KEY_LEN 24
+
+// Base64-encode a 16-byte nonce into `out`, which must hold
+// NOISE_UPGRADE_WS_KEY_LEN + 1 bytes.
+static inline void noise_upgrade_ws_key(
+        const uint8_t nonce[NOISE_UPGRADE_WS_NONCE_LEN],
+        char out[NOISE_UPGRADE_WS_KEY_LEN + 1]) {
+    static const char kB64[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t o = 0;
+    size_t i = 0;
+    for (; i + 3 <= NOISE_UPGRADE_WS_NONCE_LEN; i += 3) {
+        uint32_t v = ((uint32_t)nonce[i] << 16) | ((uint32_t)nonce[i + 1] << 8)
+                     | nonce[i + 2];
+        out[o++] = kB64[(v >> 18) & 63];
+        out[o++] = kB64[(v >> 12) & 63];
+        out[o++] = kB64[(v >> 6) & 63];
+        out[o++] = kB64[v & 63];
+    }
+    // 16 = 5 * 3 + 1: one byte remains, which encodes as two characters and "==".
+    uint32_t v = (uint32_t)nonce[i] << 16;
+    out[o++] = kB64[(v >> 18) & 63];
+    out[o++] = kB64[(v >> 12) & 63];
+    out[o++] = '=';
+    out[o++] = '=';
+    out[o] = '\0';
+}
+
+// True when `key` has the shape noise_upgrade_ws_key() produces.
+static inline bool noise_upgrade_ws_key_valid(const char *key) {
+    if (!key || strlen(key) != NOISE_UPGRADE_WS_KEY_LEN) return false;
+    for (size_t i = 0; i < NOISE_UPGRADE_WS_KEY_LEN - 2; i++) {
+        char c = key[i];
+        bool b64 = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+                   || (c >= '0' && c <= '9') || c == '+' || c == '/';
+        if (!b64) return false;
+    }
+    return key[NOISE_UPGRADE_WS_KEY_LEN - 2] == '='
+           && key[NOISE_UPGRADE_WS_KEY_LEN - 1] == '=';
+}
+
 // Build the WebSocket upgrade request.
 //
 // The bearer goes in an Authorization header, not the request target, so it
@@ -81,15 +127,19 @@ static inline int noise_upgrade_query_escape(const char *in, char *out,
 // vm_id is escaped instead, because it lands in the request target that the
 // edge routes on.
 //
+// `ws_key` must come from noise_upgrade_ws_key() with a fresh nonce.
+//
 // Returns the request length, or -1 if anything is missing, contains CR/LF, or
 // will not fit. Never writes a partial request.
 static inline int noise_upgrade_build_request(const char *path,
                                               const char *vm_id,
                                               const char *host,
                                               const char *token,
+                                              const char *ws_key,
                                               char *out, size_t out_cap) {
     if (!path || !vm_id || !host || !token || !out) return -1;
     if (!*vm_id || !*token) return -1;
+    if (!noise_upgrade_ws_key_valid(ws_key)) return -1;
     if (strpbrk(token, "\r\n") || strpbrk(vm_id, "\r\n")) return -1;
     if (strpbrk(host, "\r\n")) return -1;
 
@@ -105,9 +155,9 @@ static inline int noise_upgrade_build_request(const char *path,
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
         "Sec-WebSocket-Version: 13\r\n"
-        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Key: %s\r\n"
         "\r\n",
-        path, vm_id_enc, host, token);
+        path, vm_id_enc, host, token, ws_key);
     if (n < 0 || (size_t)n >= out_cap) return -1;
     return n;
 }
